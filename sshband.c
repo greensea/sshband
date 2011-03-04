@@ -103,43 +103,62 @@ void save_sql_queue() {
 	chmod("/var/sshband.sql", 0600);
 }
 
-
-int ssh_session_init(u_short port) {
-	if (sessions[port] == NULL) {
-		sessions[port] = malloc(sizeof(ssh_session_t));
-	}
-	if (sessions[port] == NULL) {
+/**
+ * @param u_short port	客户端端口
+ * @param &ssh_session_t** sess	若创建会话成功，会话节点指针将通过这个参数返回
+ * @return int	0为成功，其他值为失败
+ * 
+ * 初始化一个新的会话
+ * 首先要定位到相应的哈希表的位置，然后
+ * ——如果哈希表位置为空，直接在这个位置上创建会话节点
+ * ——如果哈希表位置非空，直接在它后面（链表）插入会话节点
+ */
+int ssh_session_init(u_short port, ssh_session_t** sess) {
+	ssh_session_t* newsess = NULL;
+	
+	newsess = malloc(sizeof(ssh_session_t));
+	if (newsess == NULL) {
 		return -1;
 	}
 
-	sessions[port]->uid = -1;
-	sessions[port]->stime = time(NULL);
-	sessions[port]->outband = 0;
-	sessions[port]->inband = 0;
-	sessions[port]->client_data_time = time(NULL);
-	memset(sessions[port]->sessid, 0x00, sizeof(sessions[port]->sessid));
-	strncpy(sessions[port]->sessid, get_random_sess_id(), sizeof(sessions[port]->sessid) - 1);
+	newsess->next = NULL;
+	newsess->uid = -1;
+	newsess->stime = time(NULL);
+	newsess->outband = 0;
+	newsess->inband = 0;
+	newsess->client_data_time = time(NULL);
+	memset(newsess->sessid, 0x00, sizeof(newsess->sessid));
+	strncpy(newsess->sessid, get_random_sess_id(), sizeof(newsess->sessid) - 1);
+	
+	if (sessions[port] == NULL) {
+		sessions[port] = newsess;
+	}
+	else {
+		newsess->next = sessions[port]->next;
+		sessions[port]->next = newsess;
+		*sess = newsess;
+	}
 
 	return 0;
 }
 
-void ssh_session_acct_new(u_short rport) {
-	ssh_session_t* pak;
+void ssh_session_acct_new(ssh_session_t* sess, u_short rport) {
 	char sql[1024] = {0};
 	
-	pak = sessions[rport];
-	if (pak == NULL) {
+	if (sess == NULL) {
 		return;
 	}
 	else {
 	}
 	
-	snprintf(sql, 1023, "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (%d, FROM_UNIXTIME(%lu), '%s', '%s', '%s', %u)", config_table_acct, config_column_uid, config_column_connecttime, config_column_username, config_column_sessionid, config_column_clientip, config_column_clientport, pak->uid, pak->stime, get_name_by_uid(pak->uid), pak->sessid, pak->client_addr, rport);
+	snprintf(sql, 1023, "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (%d, FROM_UNIXTIME(%lu), '%s', '%s', '%s', %u)", config_table_acct, config_column_uid, config_column_connecttime, config_column_username, config_column_sessionid, config_column_clientip, config_column_clientport, sess->uid, sess->stime, get_name_by_uid(sess->uid), sess->sessid, sess->client_addr, rport);
 	db_query(sql);
 }
 
 void ssh_session_start(hdl_pak_t pak) {
 	u_short rport;
+	int *ipval, *ipval2;
+	ssh_session_t* sess;
 	struct in_addr ip;
 	
 	if (pak.dport == ssh_port) {
@@ -151,17 +170,28 @@ void ssh_session_start(hdl_pak_t pak) {
 		ip = pak.ip_dst;
 	}
 	
-	if (sessions[rport] == NULL) {
-		ssh_session_init(rport);
-		strncpy(sessions[rport]->client_addr, inet_ntoa(ip), sizeof(sessions[rport]->client_addr) - 1);
+	/**
+	 * 查找对应的客户端会话，先通过哈希值查找，找不到就顺着链表查找
+	 * 若找不到，就调用 ssh_session_init 创建新的会话
+	 * 如果找到的话，直接中断函数（也就是不执行后面的语句去调用 ssh_session_init了）
+	 */
+	sess = sessions[rport];
+	ipval = (int*)&ip;
+	while (sess != NULL) {
+		ipval2 = (int*) &(sess->ip);
+		if (ipval == ipval2) {
+			return;
+		}
+		sess = sess->next;
+	}
+
+	if (0 == ssh_session_init(rport, &sess)) {
+		strncpy(sess->client_addr, inet_ntoa(ip), sizeof(sess->client_addr) - 1);
 	}
 }
 
-void ssh_session_acct_end(u_short rport) {
-	ssh_session_t* sess;
+void ssh_session_acct_end(ssh_session_t* sess) {
 	char sql[1024];
-	
-	sess = sessions[rport];
 	
 	if (sess == NULL) {
 		return;
@@ -174,19 +204,55 @@ void ssh_session_acct_end(u_short rport) {
 
 void ssh_session_end(hdl_pak_t pak) {
 	u_short rport;
+	int *ipval, *ipval2;
 	ssh_session_t* sess;
 
-	rport = (pak.dport == ssh_port ? pak.sport : pak.dport) ;	
+	if (pak.dport == ssh_port) {
+		rport = pak.sport;
+		ipval = (int*)&pak.ip_src;
+	}
+	else {
+		rport = pak.dport;
+		ipval = (int*)&pak.ip_dst;
+	}
+	
+	/**
+	 * 在哈希链表中查找会话节点
+	 */
 	sess = sessions[rport];
+	while (sess != NULL) {
+		ipval2 = (int*)&(sess->ip);
+		if (ipval == ipval2) {
+			break;
+		}
+		sess = sess->next;
+	}
 	
 	if (sess == NULL) {
 		return;
 	}
 	
-	ssh_session_acct_end(rport);
+	ssh_session_acct_end(sess);
 	
-	free(sess);
-	sessions[rport] = NULL;
+	/**
+	 * 删除会话节点
+	 * 如果会话节点在哈希表中，直接删除即可
+	 * 如果在链表中，就需要链表中的删除节点操作
+	 */
+	if (sess == sessions[rport]) {
+		sessions[rport] = sessions[rport]->next;
+		free(sess);
+	}
+	else {
+		ssh_session_t* prev;
+		
+		prev = sessions[rport];
+		while (prev->next != sess) {
+			prev = prev->next;
+		}
+		prev->next = sess;
+		free(sess);
+	}
 }
 
 uid_t get_ssh_uid(u_short rport) {
@@ -203,15 +269,37 @@ uid_t get_ssh_uid(u_short rport) {
 
 void ssh_session_gotpack(hdl_pak_t pak) {
 	u_short rport;
+	int *ipval, *ipval2;
+	ssh_session_t *sess;
 	
-	rport = (pak.dport == ssh_port ? pak.sport : pak.dport) ;
+	
+	if (pak.dport == ssh_port) {
+		rport = pak.sport;
+		ipval = (int*)&pak.ip_src;
+	}
+	else {
+		rport = pak.dport;
+		ipval = (int*)&pak.ip_dst;
+	}
+	
 	
 	// 检查是否应该清理非正常断开的客户端
 	if (time(NULL) - last_cleanup_time > 60) {
 		ssh_session_cleanup();
 	}
-
-	if (sessions[rport] == NULL) {
+	
+	/** 
+	 * 在哈希链表中查找对应的会话节点
+	 */
+	sess = sessions[rport];
+	while (sess != NULL) {
+		ipval2 = (int*)&(sess->ip);
+		if (ipval == ipval2) {
+			break;
+		}
+		sess = sess->next;
+	}
+	if (sess == NULL) {
 		return;
 	}
 	
@@ -219,22 +307,22 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 	/**
 	 * 正式处理
 	 */
-	if (sessions[rport]->uid == -1) {
+	if (sess->uid == -1) {
 		//printf("uid==-1, try to get uid on port %d...", rport);
-		sessions[rport]->uid = get_ssh_uid(rport);
+		sess->uid = get_ssh_uid(rport);
 		//printf("%d\n", sessions[rport]->uid);
 		// 获取到UID以后，增加acct记录
-		if (sessions[rport]->uid != -1) {
-			ssh_session_acct_new(rport);
+		if (sess->uid != -1) {
+			ssh_session_acct_new(sess, rport);
 		}
 	}
 	
 	if (pak.sport == ssh_port) {
-		sessions[rport]->outband += pak.len;
+		sess->outband += pak.len;
 	}
 	else {
-		sessions[rport]->inband += pak.len;
-		sessions[rport]->client_data_time = time(NULL);
+		sess->inband += pak.len;
+		sess->client_data_time = time(NULL);
 	}
 	
 	//printf("port=%d\tinband=%lld\toutband=%lld\tuid=%d\n", rport, sessions[rport]->inband / 1024, sessions[rport]->outband / 1024, sessions[rport]->uid);
@@ -343,12 +431,16 @@ void load_config() {
 
 static void sshband_exit(int signo) {
 	int i;
+	ssh_session_t *sess, *next;
 	
 	for (i = 0; i < sizeof(sessions) / sizeof(ssh_session_t*); i++) {
-		if (sessions[i] != NULL) {
-			ssh_session_acct_end(i);
+		sess = sessions[i];
+		while (sess != NULL) {
+			next = sess->next;
+			ssh_session_acct_end(sess);
 			free(sessions[i]);
-			sessions[i] = NULL;
+			sess = NULL;
+			sess = next;
 		}
 	}
 	
@@ -381,21 +473,37 @@ void ssh_session_cleanup() {
 	int i;
 	unsigned long ino;
 	pid_t pid;
-	ssh_session_t *sess;
+	ssh_session_t *sess, *prev;
 	
 	for (i = 0; i < sizeof(sessions) / sizeof(ssh_session_t*); i++) {
-		if (sessions[i] == NULL) {
-			continue;
-		}
-		
 		sess = sessions[i];
-		if (sess->uid != ssh_uid && sess->uid != 0 && sess->uid != -1) {
-			ino = get_inode_by_port(i);
-			pid = get_pid_by_inode(ino);
-			if (pid <= 0) {
-				ssh_session_acct_end(i);
-				free(sess);
-				sessions[i] = NULL;
+		
+		while (sess != NULL) {
+			if (sess->uid != ssh_uid && sess->uid != 0 && sess->uid != -1) {
+				ino = get_inode_by_port(i);
+				pid = get_pid_by_inode(ino);
+				if (pid <= 0) {
+					// 哈希表节点上的处理
+					if (sess == sessions[i]) {
+						ssh_session_acct_end(sess);
+						sessions[i] = sessions[i]->next;
+						free(sess);
+						
+						sess = sessions[i];
+						prev = sess;
+					}
+					// 链表节点上的处理
+					else {
+						prev->next = sess->next;
+						ssh_session_acct_end(sess);
+						free(sess);
+						sess = prev->next;
+					}
+				}
+				else {
+					prev = sess;
+					sess = sess->next;
+				}
 			}
 		}
 	}
