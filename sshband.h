@@ -6,6 +6,12 @@
 #include <stdint.h>
 #include <netinet/in.h>
 
+/**
+ * 清理线程的间隔，单位秒
+ * 如果客户端非正常断线，服务器是无法探知的，所以需要设定一个时间来定期检查非正常断线的客户端
+ */
+#define SESSION_CLEANUP_TIME 120
+
 
 typedef struct hdl_pak_t {
 	u_short sport;

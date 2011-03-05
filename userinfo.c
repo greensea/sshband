@@ -74,12 +74,13 @@ int proc_inode_exists(const char* proc, unsigned long ino) {
 	return 0;
 }
 
-unsigned long get_inode_by_port(unsigned short int remote_port) {
+unsigned long get_inode_by_ipport(unsigned long ip, unsigned short int remote_port) {
 	FILE* fp;
 	unsigned long sockid = 0;
 	unsigned int lport = 0;
 	unsigned int rport = 0;
-	
+	unsigned long rip = 0x0;
+
 	fp = fopen("/proc/net/tcp", "r");
 	if (fp == NULL) {
 		fprintf(stderr, "Could not open /proc/net/tcp");
@@ -88,12 +89,13 @@ unsigned long get_inode_by_port(unsigned short int remote_port) {
 	
 	while (!feof(fp)) {
 		while(fgetc(fp) != '\n' && !feof(fp));
-		fscanf(fp, "%*d: %*x:%x %*x:%x %*x %*x:%*x %*x:%*x %*x %*d %*d %lu %*d %*d %*x %*d %*d %*d %*d %*d", &lport, &rport, &sockid);
-		if (lport == 22 && rport == remote_port) {
-			break;
+		fscanf(fp, "%*d: %*x:%x %lx:%x %*x %*x:%*x %*x:%*x %*x %*d %*d %lu %*d %*d %*x %*d %*d %*d %*d %*d", &lport, &rip, &rport, &sockid);
+		if (lport == 22 && rport == remote_port && rip == ip) {
+				break;
 		}
+		sockid = 0;
 	}
-	
+
 	fclose(fp);
 	
 	return sockid;
@@ -160,13 +162,13 @@ uid_t get_uid_by_pid(pid_t pid) {
 	return ruid;
 }
 
-uid_t get_uid_by_port(unsigned short int rport) {
+uid_t get_uid_by_ipport(unsigned long ip, unsigned short int rport) {
 	unsigned long inode;
 	pid_t pid;
 	uid_t uid;
-	
-	inode = get_inode_by_port(rport);
-	//	printf("(get_inode_by_rport(%d))=%lu\n", rport, inode);
+
+	inode = get_inode_by_ipport(ip, rport);
+//		printf("(get_inode_by_rport(%d))=%lu\n", rport, inode);
 	pid = get_pid_by_inode(inode);
 //		printf("(get_pid_by inode)=%d\n", pid);
 	uid = get_uid_by_pid(pid);

@@ -46,7 +46,7 @@ const char* get_random_sess_id() {
 	for (i = 0; i < 4; i++) {
 		sprintf(ret, "%08x%08x%08x%08x", rand(), rand(), rand(), rand());
 	}
-	
+
 	return ret;
 }
 
@@ -136,8 +136,8 @@ int ssh_session_init(u_short port, ssh_session_t** sess) {
 	else {
 		newsess->next = sessions[port]->next;
 		sessions[port]->next = newsess;
-		*sess = newsess;
 	}
+	*sess = newsess;
 
 	return 0;
 }
@@ -179,7 +179,7 @@ void ssh_session_start(hdl_pak_t pak) {
 	ipval = (int*)&ip;
 	while (sess != NULL) {
 		ipval2 = (int*) &(sess->ip);
-		if (ipval == ipval2) {
+		if (*ipval == *ipval2) {
 			return;
 		}
 		sess = sess->next;
@@ -187,6 +187,7 @@ void ssh_session_start(hdl_pak_t pak) {
 
 	if (0 == ssh_session_init(rport, &sess)) {
 		strncpy(sess->client_addr, inet_ntoa(ip), sizeof(sess->client_addr) - 1);
+		sess->ip = ip;		
 	}
 }
 
@@ -222,7 +223,7 @@ void ssh_session_end(hdl_pak_t pak) {
 	sess = sessions[rport];
 	while (sess != NULL) {
 		ipval2 = (int*)&(sess->ip);
-		if (ipval == ipval2) {
+		if (*ipval == *ipval2) {
 			break;
 		}
 		sess = sess->next;
@@ -255,10 +256,10 @@ void ssh_session_end(hdl_pak_t pak) {
 	}
 }
 
-uid_t get_ssh_uid(u_short rport) {
+uid_t get_ssh_uid(unsigned long ip, u_short rport) {
 	uid_t uid;
-	
-	uid = get_uid_by_port(rport);
+
+	uid = get_uid_by_ipport(ip, rport);
 	if (uid != ssh_uid && uid != 0) {
 		return uid;
 	}
@@ -271,20 +272,22 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 	u_short rport;
 	int *ipval, *ipval2;
 	ssh_session_t *sess;
+	struct in_addr ip;
 	
 	
 	if (pak.dport == ssh_port) {
 		rport = pak.sport;
 		ipval = (int*)&pak.ip_src;
+		ip = pak.ip_src;
 	}
 	else {
 		rport = pak.dport;
 		ipval = (int*)&pak.ip_dst;
+		ip = pak.ip_dst;
 	}
 	
-	
 	// 检查是否应该清理非正常断开的客户端
-	if (time(NULL) - last_cleanup_time > 60) {
+	if (time(NULL) - last_cleanup_time > SESSION_CLEANUP_TIME) {
 		ssh_session_cleanup();
 	}
 	
@@ -294,7 +297,7 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 	sess = sessions[rport];
 	while (sess != NULL) {
 		ipval2 = (int*)&(sess->ip);
-		if (ipval == ipval2) {
+		if (*ipval == *ipval2) {
 			break;
 		}
 		sess = sess->next;
@@ -308,9 +311,9 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 	 * 正式处理
 	 */
 	if (sess->uid == -1) {
-		//printf("uid==-1, try to get uid on port %d...", rport);
-		sess->uid = get_ssh_uid(rport);
-		//printf("%d\n", sessions[rport]->uid);
+		//printf("uid==-1, try get uid, port=%d, ip=%.8x\n", rport, ip.s_addr);
+		sess->uid = get_ssh_uid(ip.s_addr, rport);
+
 		// 获取到UID以后，增加acct记录
 		if (sess->uid != -1) {
 			ssh_session_acct_new(sess, rport);
@@ -324,9 +327,6 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 		sess->inband += pak.len;
 		sess->client_data_time = time(NULL);
 	}
-	
-	//printf("port=%d\tinband=%lld\toutband=%lld\tuid=%d\n", rport, sessions[rport]->inband / 1024, sessions[rport]->outband / 1024, sessions[rport]->uid);
-	
 }
 
 void sshband_handler(hdl_pak_t pak) {
@@ -477,10 +477,10 @@ void ssh_session_cleanup() {
 	
 	for (i = 0; i < sizeof(sessions) / sizeof(ssh_session_t*); i++) {
 		sess = sessions[i];
-		
+
 		while (sess != NULL) {
 			if (sess->uid != ssh_uid && sess->uid != 0 && sess->uid != -1) {
-				ino = get_inode_by_port(i);
+				ino = get_inode_by_ipport(sess->ip.s_addr, i);
 				pid = get_pid_by_inode(ino);
 				if (pid <= 0) {
 					// 哈希表节点上的处理
@@ -500,11 +500,9 @@ void ssh_session_cleanup() {
 						sess = prev->next;
 					}
 				}
-				else {
-					prev = sess;
-					sess = sess->next;
-				}
 			}
+			prev = sess;
+			sess = sess->next;
 		}
 	}
 	
