@@ -446,6 +446,7 @@ static void sshband_exit(int signo) {
 	
 	save_sql_queue();
 	
+	unlink("/var/run/sshband.pid");
 	exit(0);
 }
 
@@ -530,6 +531,18 @@ int main(int argc, char** argv) {
 		exit(0);
 	}		
 	else {
+		FILE* fp;
+		
+		fp = fopen("/var/run/sshband.pid", "w");
+		if (fp != NULL) {
+			fprintf(fp, "%d", getpid());
+			fclose(fp);
+		}
+		else {
+			fprintf(stderr, "Could not create pid file: /var/run/sshband.pid\n");
+			exit(1);
+		}
+		
 		pcap_main();
 	}
 	
