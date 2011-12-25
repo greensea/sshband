@@ -17,6 +17,7 @@
 #include "userinfo.h"
 
 extern char config_net_device[1024];
+static  int  link_type = 0;
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
 	const struct sniff_ethernet *ethernet; /* The ethernet header */
@@ -57,36 +58,44 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 }
 
 int pcap_main() {
+	pcap_t *handle;		/* Session handle */
+	char dev[] = "rl0";		/* Device to sniff on */
+	char errbuf[PCAP_ERRBUF_SIZE];	/* Error string */
+	struct bpf_program fp;		/* The compiled filter expression */
+	char filter_exp[] = "port 22";	/* The filter expression */
+	bpf_u_int32 mask;		/* The netmask of our sniffing device */
+	bpf_u_int32 net;		/* The IP of our sniffing device */
 	
+	if (pcap_lookupnet(config_net_device, &net, &mask, errbuf) == -1) {
+		fprintf(stderr, "Can't get netmask for device %s\n", dev);
+		net = 0;
+		mask = 0;
+	}
 	
-	 pcap_t *handle;		/* Session handle */
-	 char dev[] = "rl0";		/* Device to sniff on */
-	 char errbuf[PCAP_ERRBUF_SIZE];	/* Error string */
-	 struct bpf_program fp;		/* The compiled filter expression */
-	 char filter_exp[] = "port 22";	/* The filter expression */
-	 bpf_u_int32 mask;		/* The netmask of our sniffing device */
-	 bpf_u_int32 net;		/* The IP of our sniffing device */
-
-	 if (pcap_lookupnet(config_net_device, &net, &mask, errbuf) == -1) {
-		 fprintf(stderr, "Can't get netmask for device %s\n", dev);
-		 net = 0;
-		 mask = 0;
-	 }
-	 handle = pcap_open_live(config_net_device, 1500, 1, 1000, errbuf);
-	 if (handle == NULL) {
-		 fprintf(stderr, "Couldn't open device  %s\n", errbuf);
-		 return(2);
-	 }
-	 if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
-		 fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
-		 return(2);
-	 }
-	 if (pcap_setfilter(handle, &fp) == -1) {
-		 fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
-		 return(2);
-	 }
-	 
-	 while (1) {
+	handle = pcap_open_live(config_net_device, 1500, 1, 1000, errbuf);
+	if (handle == NULL) {
+		fprintf(stderr, "Couldn't open device  %s\n", errbuf);
+		return(2);
+	}
+	
+	link_type = pcap_datalink(handle);
+	SSHBAND_LOG("pcap_datalink :  %d   ",  link_type);
+	if (link_type != 1  &&  link_type != 113) {	
+		SSHBAND_LOG("error  not support link type  %d ",  link_type);
+		return(2);	
+	}
+	
+	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
+		fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
+		return(2);
+	}
+	
+	if (pcap_setfilter(handle, &fp) == -1) {
+		fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+		return(2);
+	}
+	
+	while (1) {
 		pcap_loop(handle, -1, got_packet, NULL);
 	}
 	
