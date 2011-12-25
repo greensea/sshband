@@ -12,6 +12,7 @@
  */
 #define SESSION_CLEANUP_TIME 120
 
+#define SSHBAND_LOG	printf
 
 typedef struct hdl_pak_t {
 	u_short sport;

@@ -466,50 +466,84 @@ int reg_signal() {
 	return 0;
 }
 
+// 清理了：返回1      否则：返回0
+static int cleanup_sess (ssh_session_t *sess, int port)
+{
+	unsigned long ino;
+	pid_t pid;
+	int ret = 0;
+
+	if (sess == NULL)  return 0;
+
+	if (sess->uid != ssh_uid && sess->uid != 0 && sess->uid != -1) {
+		ino = get_inode_by_ipport(sess->ip.s_addr, port);
+		pid = get_pid_by_inode(ino);
+		if (pid <= 0) {
+			ret = 1;
+			SSHBAND_LOG("cleanup session,  session id : %s ", sess->sessid);
+			ssh_session_acct_end(sess);
+			//free(sess);    // caller do free
+		}
+	}
+	return ret;
+}
+
+
+// 每次调用最多只清理一个，哪怕有很多。  清理了：返回1    否则没找到：返回0
+int ssh_session_cleanup_port (int port)
+{
+	ssh_session_t *sess = NULL;
+	ssh_session_t *prev = NULL;
+
+	sess = sessions[port];
+	if (sess == NULL) return 0;
+
+	// 在哈希表节点上
+	if (cleanup_sess(sess, port) == 1) {
+		sessions[port] = sess->next;
+		free(sess);
+		return 1;   // just return
+	}
+
+	// 在链表节点上
+	prev = sess;
+	sess = sess->next;
+	while(sess != NULL) {
+		if (cleanup_sess(sess, port) == 1) {
+			prev->next = sess->next;
+			free(sess);
+			return 1;   // just return
+		}
+		prev = sess;
+		sess = sess->next;
+	}
+	return 0;
+}
+
+
 /**
  * 清理非正常中断的SSH用户进程session_
  * 若会话列表中已有用户编号，而根据此会话端口在本机上查不到对应进程，则认为会话非正常中断
  */
-void ssh_session_cleanup() {
+void ssh_session_cleanup() 
+{
 	int i;
-	unsigned long ino;
-	pid_t pid;
-	ssh_session_t *sess, *prev;
+	//unsigned long ino;
+	//pid_t pid;
+	//ssh_session_t *sess = NULL;
+	//ssh_session_t *prev = NULL;
 	
+	SSHBAND_LOG("clean in");
+
 	for (i = 0; i < sizeof(sessions) / sizeof(ssh_session_t*); i++) {
-		sess = sessions[i];
-
-		while (sess != NULL) {
-			if (sess->uid != ssh_uid && sess->uid != 0 && sess->uid != -1) {
-				ino = get_inode_by_ipport(sess->ip.s_addr, i);
-				pid = get_pid_by_inode(ino);
-				if (pid <= 0) {
-					// 哈希表节点上的处理
-					if (sess == sessions[i]) {
-						ssh_session_acct_end(sess);
-						sessions[i] = sessions[i]->next;
-						free(sess);
-						
-						sess = sessions[i];
-						prev = sess;
-					}
-					// 链表节点上的处理
-					else {
-						prev->next = sess->next;
-						ssh_session_acct_end(sess);
-						free(sess);
-						sess = prev->next;
-					}
-				}
-			}
-			prev = sess;
-			sess = sess->next;
+		while (1) {
+			if (ssh_session_cleanup_port(i) == 0)
+				break;
 		}
-	}
-	
+	}	
 	last_cleanup_time = time(NULL);
+	SSHBAND_LOG("clean out");
 }
-
 
 int main(int argc, char** argv) {
 	load_config();
