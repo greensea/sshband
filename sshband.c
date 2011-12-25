@@ -203,6 +203,49 @@ void ssh_session_acct_end(ssh_session_t* sess) {
 	db_query(sql);	
 }
 
+/**
+ * 删除会话表中的节点
+ */
+int ssh_session_delete(ssh_session_t *sess,  int rport)
+{
+	ssh_session_t *prev = NULL;
+	ssh_session_t *cur = NULL;    //ssh_session_t *next = NULL;
+	int found;
+	
+	 // 删除会话节点
+	 // 如果会话节点在哈希表中，直接删除即可
+	 // 如果在链表中，就需要链表中的删除节点操作	 
+	if (sess == sessions[rport]) {
+		sessions[rport] = sessions[rport]->next;
+		free(sess);
+	}
+	else {		
+		found = 0;
+		
+		prev = sessions[rport];
+		cur  = prev->next;   //next = NULL;  if  (cur)  next = cur->next;
+		
+		while (cur) {
+			if (cur == sess) {
+				found = 1;
+				break;
+			}
+			prev = cur;
+			cur  = prev->next;   //next = NULL;  if  (cur)  next = cur->next;
+		
+		}		
+
+		if (found == 1) {
+			prev->next = cur->next;
+			free(cur);		
+		}
+		else {
+			SSHBAND_LOG("error  %s   %d",  __FUNCTION__,  __LINE__);		
+		}				
+	}
+	return 0;
+}
+
 void ssh_session_end(hdl_pak_t pak) {
 	u_short rport;
 	int *ipval, *ipval2;
@@ -234,26 +277,7 @@ void ssh_session_end(hdl_pak_t pak) {
 	}
 	
 	ssh_session_acct_end(sess);
-	
-	/**
-	 * 删除会话节点
-	 * 如果会话节点在哈希表中，直接删除即可
-	 * 如果在链表中，就需要链表中的删除节点操作
-	 */
-	if (sess == sessions[rport]) {
-		sessions[rport] = sessions[rport]->next;
-		free(sess);
-	}
-	else {
-		ssh_session_t* prev;
-		
-		prev = sessions[rport];
-		while (prev->next != sess) {
-			prev = prev->next;
-		}
-		prev->next = sess;
-		free(sess);
-	}
+	ssh_session_delete(sess, rport);
 }
 
 uid_t get_ssh_uid(unsigned long ip, u_short rport) {
