@@ -1,0 +1,10 @@
+You need libmysqlclient-dev and libpcap-dev before install.
+
+For Debian, just enter
+    
+    # aptitude install libmysqlcilent-dev libpcap-dev
+
+Then
+
+	$ make
+	# make install

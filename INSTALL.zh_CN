@@ -1,0 +1,10 @@
+编译安装 sshband 之前，先要安装 libmysqlclient-dev 和 libpcap-dev 软件包
+
+在 Debian 系统上可执行下面的命令来安装上述两个软件包
+
+    # aptitude install libmysqlclient-dev libpcap-dev
+
+然后开始编译安装
+
+    $ make
+    # make install
