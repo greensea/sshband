@@ -17,6 +17,7 @@
 #include "userinfo.h"
 
 extern char config_net_device[1024];
+extern u_short ssh_port;
 static  int  link_type = 0;
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
@@ -33,13 +34,13 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET );
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
-		printf("   * Invalid IP header length: %u bytes\n", size_ip);
+		SSHBAND_LOGD("   * Invalid IP header length: %u bytes\n", size_ip);
 		return;
 	}
 	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
 	size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
-		printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
+		SSHBAND_LOGD("   * Invalid TCP header length: %u bytes\n", size_tcp);
 		return;
 	}
 	//payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
@@ -61,9 +62,11 @@ int pcap_main() {
 	pcap_t *handle;		/* Session handle */
 	char errbuf[PCAP_ERRBUF_SIZE];	/* Error string */
 	struct bpf_program fp;		/* The compiled filter expression */
-	char filter_exp[] = "port 22";	/* The filter expression */
+	char filter_exp[128] = {0};	/* The filter expression, like "port 22" */
 	bpf_u_int32 mask;		/* The netmask of our sniffing device */
 	bpf_u_int32 net;		/* The IP of our sniffing device */
+	
+	snprintf(filter_exp, sizeof(filter_exp) - 1, "port %d", ssh_port);
 	
 	if (pcap_lookupnet(config_net_device, &net, &mask, errbuf) == -1) {
 		SSHBAND_LOGW("Can't get netmask for device %s\n", config_net_device);
