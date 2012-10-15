@@ -499,9 +499,12 @@ static void sshband_exit(int signo) {
 	
 	save_sql_queue();
 	
+	db_destroy();
+	
 	unlink("/var/run/sshband.pid");
 	
-	SSHBAND_LOGI("sshband stopped\n")
+	SSHBAND_LOGI("sshband stopped\n");
+	
 	exit(0);
 }
 
@@ -600,16 +603,16 @@ void ssh_session_cleanup()
 	SSHBAND_LOG("%s: clean out", __func__);
 }
 
+
 int main(int argc, char** argv) {
 	load_config();
 	reg_signal();
 	
 	/// 检查 SQL 服务器是否正常
-	if (db_query("SELECT 1") != 0) {
+	if (db_init() != 0) {
 		SSHBAND_LOGE("MySQL configure error, please check sshband configure file\n");
-		SSHBAND_LOGI("sshband stopped\n")
 
-		exit(2);
+		sshband_exit(2);
 	}
 	
 	load_sql_queue();
@@ -632,9 +635,7 @@ int main(int argc, char** argv) {
 		}
 		else {
 			SSHBAND_LOGE("Could not create pid file: /var/run/sshband.pid\n");
-			SSHBAND_LOGI("sshband stopped\n")
-
-			exit(1);
+			sshband_exit(1);
 		}
 		
 		pcap_main();
