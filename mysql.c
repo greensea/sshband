@@ -20,10 +20,10 @@ int db_query(const char* sql) {
 	sql_queue_t* tmp;
 	MYSQL mysql, *sock;
 	
-printf("INSQL: %s\n", sql);	
-
+	/// FIXME: 增加 addslash 函数，对 SQL 语句进行转义，防止注入
+	
 	/**
-	 * SQL语句队列
+	 * 保存到 SQL语句队列
 	 */
 	tmp = malloc(sizeof(sql_queue_t));
 	memset(tmp->sql, 0, sizeof(tmp->sql));
@@ -51,7 +51,7 @@ printf("INSQL: %s\n", sql);
 	
 
 	while ((p = sql_queue_head) != NULL) {
-		printf("QUERYSQL: %s\n", p->sql);
+		SSHBAND_LOGD("QUERYSQL: %s\n", p->sql);
 		if (mysql_query(sock, p->sql)) {
 			SSHBAND_LOGE("Could not execute SQL(\"%s\") on MySQL server: %s\n", p->sql, mysql_error(sock));
 			//return -2;

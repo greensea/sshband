@@ -56,34 +56,42 @@ void load_sql_queue() {
 	FILE* fp;
 	sql_queue_t* p = NULL;
 	char sql[sizeof(p->sql)] = {0};
+	int n = 0;
 	
 	fp = fopen("/var/sshband.sql", "r");
 	if (fp == NULL) {
+		SSHBAND_LOGI("No queued SQL(s)\n");
 		return;
 	}
 	
 	sql_queue_head = p = malloc(sizeof(sql_queue_t));
 	p->next = NULL;
 	fread(p->sql, sizeof(p->sql), 1, fp);
-	printf("p->sql: %s\n", p->sql);
+	SSHBAND_LOGD("Loading SQL queue: %s\n", p->sql);
+	n++;
 	
 	while (fread(sql, sizeof(p->sql), 1, fp)) {
 		p->next = malloc(sizeof(sql_queue_t));
 		p = p->next;
 		p->next = NULL;
 		strncpy(p->sql, sql, sizeof(p->sql));
-		printf("p->sql: %s\n", p->sql);
+		SSHBAND_LOGD("Loading SQL queue: %s\n", p->sql);
+		n++;
 	}
 	
 	fclose(fp);
 	unlink("/var/sshband.sql");	
+	
+	SSHBAND_LOGI("Loaded %d queued SQL(s)\n", n);
 }
 
 void save_sql_queue() {
 	FILE* fp;
 	sql_queue_t* p;
+	int n = 0;
 	
 	if (sql_queue_head == NULL) {
+		SSHBAND_LOGI("No SQL(s) to be save\n");
 		return; 
 	}
 	
@@ -99,10 +107,14 @@ void save_sql_queue() {
 		sql_queue_head = p;
 		p = p->next;
 		free(sql_queue_head);
+		
+		n++;
 	}
 
 	fclose(fp);
 	chmod("/var/sshband.sql", 0600);
+	
+	SSHBAND_LOGI("Saved %d SQL(s)\n", n);
 }
 
 /**
@@ -120,6 +132,7 @@ int ssh_session_init(u_short port, ssh_session_t** sess) {
 	
 	newsess = malloc(sizeof(ssh_session_t));
 	if (newsess == NULL) {
+		SSHBAND_LOGE("malloc() fail: %s\n", strerror(errno));
 		return -1;
 	}
 
@@ -141,6 +154,8 @@ int ssh_session_init(u_short port, ssh_session_t** sess) {
 	}
 	*sess = newsess;
 
+	SSHBAND_LOGD("New session created, sessionid is %s\n", newsess->sessid);
+
 	return 0;
 }
 
@@ -152,8 +167,10 @@ void ssh_session_acct_new(ssh_session_t* sess, u_short rport) {
 	}
 	else {
 	}
+
+	SSHBAND_LOGD("Insert new client %s(%s) info into SQL server\n", sess->client_addr, sess->sessid);
 	
-	snprintf(sql, 1023, "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (%d, FROM_UNIXTIME(%lu), '%s', '%s', '%s', %u)", config_table_acct, config_column_uid, config_column_connecttime, config_column_username, config_column_sessionid, config_column_clientip, config_column_clientport, sess->uid, sess->stime, get_name_by_uid(sess->uid), sess->sessid, sess->client_addr, rport);
+	snprintf(sql, sizeof(sql) - 1, "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (%d, FROM_UNIXTIME(%lu), '%s', '%s', '%s', %u)", config_table_acct, config_column_uid, config_column_connecttime, config_column_username, config_column_sessionid, config_column_clientip, config_column_clientport, sess->uid, sess->stime, get_name_by_uid(sess->uid), sess->sessid, sess->client_addr, rport);
 	db_query(sql);
 }
 
@@ -186,6 +203,8 @@ void ssh_session_start(hdl_pak_t pak) {
 		}
 		sess = sess->next;
 	}
+	
+	SSHBAND_LOGD("No session found in current session list, created it now\n");
 
 	if (0 == ssh_session_init(rport, &sess)) {
 		strncpy(sess->client_addr, inet_ntoa(ip), sizeof(sess->client_addr) - 1);
@@ -200,7 +219,9 @@ void ssh_session_acct_end(ssh_session_t* sess) {
 		return;
 	}
 	
-	snprintf(sql, 1023, "UPDATE %s SET %s=%llu, %s=%llu, %s=FROM_UNIXTIME(%lu)  WHERE %s='%s'", config_table_acct, config_column_inband, sess->inband, config_column_outband, sess->outband, config_column_disconnecttime, sess->client_data_time, config_column_sessionid, sess->sessid);
+	SSHBAND_LOGD("Session %s from %s is end, updating info into SQL server\n", sess->sessid, sess->client_addr);
+	
+	snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=%llu, %s=%llu, %s=FROM_UNIXTIME(%lu)  WHERE %s='%s'", config_table_acct, config_column_inband, sess->inband, config_column_outband, sess->outband, config_column_disconnecttime, sess->client_data_time, config_column_sessionid, sess->sessid);
 	//printf("sql=%s\n", sql);
 	db_query(sql);	
 }
@@ -221,7 +242,7 @@ int ssh_session_delete(ssh_session_t *sess,  int rport)
 		sessions[rport] = sessions[rport]->next;
 		free(sess);
 	}
-	else {		
+	else {
 		found = 0;
 		
 		prev = sessions[rport];
@@ -234,8 +255,7 @@ int ssh_session_delete(ssh_session_t *sess,  int rport)
 			}
 			prev = cur;
 			cur  = prev->next;   //next = NULL;  if  (cur)  next = cur->next;
-		
-		}		
+		}
 
 		if (found == 1) {
 			prev->next = cur->next;
@@ -275,6 +295,11 @@ void ssh_session_end(hdl_pak_t pak) {
 	}
 	
 	if (sess == NULL) {
+		char ipstr[19] = {0};
+		
+		strncpy(ipstr, inet_ntoa(pak.ip_src), sizeof(ipstr) - 1);
+		SSHBAND_LOGD("No session found while closing session from %s\n", ipstr);
+		
 		return;
 	}
 	
@@ -290,6 +315,7 @@ uid_t get_ssh_uid(unsigned long ip, u_short rport) {
 		return uid;
 	}
 	else {
+		SSHBAND_LOGD("No match uid %d with ip %lu and port %d found\n", uid, ip, rport);
 		return -1;
 	}
 }
@@ -312,7 +338,7 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 		ip = pak.ip_dst;
 	}
 	
-	// 检查是否应该清理非正常断开的客户端
+	// 定时清理非正常断开的客户端
 	if (time(NULL) - last_cleanup_time > SESSION_CLEANUP_TIME) {
 		ssh_session_cleanup();
 	}
@@ -329,6 +355,10 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 		sess = sess->next;
 	}
 	if (sess == NULL) {
+		char ipstr[19] = {0};
+		
+		strncpy(ipstr, inet_ntoa(pak.ip_src), sizeof(ipstr) - 1);
+		SSHBAND_LOGD("Receive packet from %s:%d, but not session is not found in session list\n", ipstr, rport);
 		return;
 	}
 	
@@ -359,8 +389,7 @@ void sshband_handler(hdl_pak_t pak) {
 	//printf("%d --> %d\t%dB\t", pak.sport, pak.dport, pak.len);
 
 	if (pak.flags & TH_SYN) {
-		printf("%d --> %d\t%dB\t", pak.sport, pak.dport, pak.len);
-		printf("SYN \n");
+		SSHBAND_LOGD("SYN %d --> %d\t%dB\n", pak.sport, pak.dport, pak.len);
 		ssh_session_start(pak);
 	}
 	
@@ -368,13 +397,10 @@ void sshband_handler(hdl_pak_t pak) {
 	
 	if (pak.flags & TH_FIN || pak.flags & TH_RST) {
 		ssh_session_end(pak);
-		printf("connect close\n");
+		SSHBAND_LOGD("FIN | RST %d --> %d\t%dB\n", pak.sport, pak.dport, pak.len);
 	}
 	
 	//printf("\t%d", get_uid_by_port(pak.sport == 22 ? pak.dport : pak.sport));
-	
-	//printf("\n");
-	
 }
 
 char* get_config(const char* name) {
@@ -509,7 +535,7 @@ static int cleanup_sess (ssh_session_t *sess, int port)
 		pid = get_pid_by_inode(ino);
 		if (pid <= 0) {
 			ret = 1;
-			SSHBAND_LOG("cleanup session,  session id : %s ", sess->sessid);
+			SSHBAND_LOGD("cleanup session,  session id : %s ", sess->sessid);
 			ssh_session_acct_end(sess);
 			//free(sess);    // caller do free
 		}
@@ -562,22 +588,23 @@ void ssh_session_cleanup()
 	//ssh_session_t *sess = NULL;
 	//ssh_session_t *prev = NULL;
 	
-	SSHBAND_LOG("clean in");
+	SSHBAND_LOGD("%s: clean in", __func__);
 
 	for (i = 0; i < sizeof(sessions) / sizeof(ssh_session_t*); i++) {
 		while (1) {
 			if (ssh_session_cleanup_port(i) == 0)
 				break;
 		}
-	}	
+	}
 	last_cleanup_time = time(NULL);
-	SSHBAND_LOG("clean out");
+	SSHBAND_LOG("%s: clean out", __func__);
 }
 
 int main(int argc, char** argv) {
 	load_config();
 	reg_signal();
 	
+	/// 检查 SQL 服务器是否正常
 	if (db_query("SELECT 1") != 0) {
 		SSHBAND_LOGE("MySQL configure error, please check sshband configure file\n");
 		SSHBAND_LOGI("sshband stopped\n")
@@ -612,6 +639,8 @@ int main(int argc, char** argv) {
 		
 		pcap_main();
 	}
+	
+	SSHBAND_LOGI("sshband stopped\n");
 	
 	return 0;
 }

@@ -65,6 +65,7 @@ int pcap_main() {
 	char filter_exp[128] = {0};	/* The filter expression, like "port 22" */
 	bpf_u_int32 mask;		/* The netmask of our sniffing device */
 	bpf_u_int32 net;		/* The IP of our sniffing device */
+	const char* link_type_name = NULL;
 	
 	snprintf(filter_exp, sizeof(filter_exp) - 1, "port %d", ssh_port);
 	
@@ -81,9 +82,15 @@ int pcap_main() {
 	}
 	
 	link_type = pcap_datalink(handle);
-	SSHBAND_LOGI("pcap_datalink :  %d   ",  link_type);
-	if (link_type != 1  &&  link_type != 113) {	
-		SSHBAND_LOGE("Not support link type %d ",  link_type);
+	link_type_name = pcap_datalink_val_to_name(link_type);
+	if (link_type_name == NULL) {
+		link_type_name = "unknown";
+	}
+	
+	SSHBAND_LOGI("Data link type is %s(%d)   ",  link_type_name, link_type);
+	
+	if (link_type != DLT_EN10MB  &&  link_type != DLT_LINUX_SLL) {	
+		SSHBAND_LOGE("Not support link type %s(%d) ",  link_type_name, link_type);
 		return(2);	
 	}
 	

@@ -19,6 +19,7 @@ uninstall :
 	rm -f /etc/init.d/sshband
 
 clean :
+	rm -f *.d
 	rm -f *.o
 	rm -f sshband
 
