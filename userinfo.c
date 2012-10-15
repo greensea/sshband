@@ -40,7 +40,9 @@ int is_sshd_proc(const char* path) {
 	}
 }
 
-
+/**
+ * @return int	1=存在，0=不存在
+ */
 int proc_inode_exists(const char* proc, unsigned long ino) {
 	char fddirpath[200];
 	char fdpath[200];
@@ -50,6 +52,7 @@ int proc_inode_exists(const char* proc, unsigned long ino) {
 	snprintf(fddirpath, 200, "/proc/%s/fd", proc);
 	dir = opendir(fddirpath);
 	if (dir == NULL) {
+		SSHBAND_LOGD("%s opendir(\"%s\") fail: %s\n", __func__, fddirpath, strerror(errno));
 		return 0;
 	}
 	
@@ -59,6 +62,7 @@ int proc_inode_exists(const char* proc, unsigned long ino) {
 		snprintf(fdpath, 200, "/proc/%s/fd/%s", proc, ent->d_name);
 		
 		if (stat(fdpath, &s) != 0) {
+			SSHBAND_LOGD("%s opendir(\"%s\") fail: %s\n", __func__,  fdpath, strerror(errno));
 			closedir(dir);
 			return 0;
 		}
@@ -93,12 +97,14 @@ unsigned long get_inode_by_ipport(unsigned long ip, unsigned short int remote_po
 		while(fgetc(fp) != '\n' && !feof(fp));
 		fscanf(fp, "%*d: %*x:%x %lx:%x %*x %*x:%*x %*x:%*x %*x %*d %*d %lu %*d %*d %*x %*d %*d %*d %*d %*d", &lport, &rip, &rport, &sockid);
 		if (lport == 22 && rport == remote_port && rip == ip) {
-				break;
+			break;
 		}
 		sockid = 0;
 	}
 
 	fclose(fp);
+	
+	SSHBAND_LOGMD("inode of client(port %u) is %lu\n", remote_port, sockid);
 	
 	return sockid;
 }
@@ -122,6 +128,8 @@ pid_t get_pid_by_inode(unsigned long inode) {
 				if (uid != 0 && uid != ssh_uid) {
 					pid = atol(ent->d_name);	// fixme: 进程编号可能是无符号长整型，而我没找到atoul之类的函数
 					closedir(dir);
+					SSHBAND_LOGMD("pid of inode %lu is %d\n", inode, pid);
+					
 					return pid;
 				}
 				else {
@@ -130,6 +138,8 @@ pid_t get_pid_by_inode(unsigned long inode) {
 			}
 		//}
 	}
+	
+	SSHBAND_LOGMD("No pid match to inode %lu\n", inode);
 	
 	closedir(dir);
 	
@@ -145,6 +155,7 @@ uid_t get_uid_by_pid(pid_t pid) {
 	FILE* fp;
 	
 	if (pid == 0) {
+		SSHBAND_LOGMD("%s: Warning: pid == 0\n", __func__);
 		return ruid;
 	}
 	
@@ -161,13 +172,15 @@ uid_t get_uid_by_pid(pid_t pid) {
 	sscanf(buf2, "Uid: %ld %ld %ld %ld", &uid, &euid, &suid, &fsuid);
 	ruid = uid;
 	
+	SSHBAND_LOGMD("uid of pid %d is %d\n", pid, ruid);
+	
 	return ruid;
 }
 
 uid_t get_uid_by_ipport(unsigned long ip, unsigned short int rport) {
 	unsigned long inode;
-	pid_t pid;
-	uid_t uid;
+	pid_t pid = 0;
+	uid_t uid = 0;
 
 	inode = get_inode_by_ipport(ip, rport);
 //		printf("(get_inode_by_rport(%d))=%lu\n", rport, inode);
