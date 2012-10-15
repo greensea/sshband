@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <stdint.h>
+#include <syslog.h>
 #include <netinet/in.h>
 
 /**
@@ -12,7 +13,26 @@
  */
 #define SESSION_CLEANUP_TIME 120
 
-#define SSHBAND_LOG	printf
+/**
+ * sshband 配置文件路径
+ */
+#define SSHBAND_CONFIG_PATH	"/etc/sshband.conf"
+
+/**
+ * SSHBAND 日志级别
+ */
+#define SSHBAND_LOG_ERROR	2
+#define SSHBAND_LOG_WARN	3
+#define SSHBAND_LOG_INFO	4
+#define SSHBAND_LOG_DEBUG	6
+
+#define SSHBAND_LOGD(LOG, ...)	if (config_log_level >= SSHBAND_LOG_DEBUG) { syslog(LOG_DAEMON | LOG_DEBUG, LOG, ##__VA_ARGS__); }
+#define SSHBAND_LOGI(LOG, ...)	if (config_log_level >= SSHBAND_LOG_INFO) { syslog(LOG_DAEMON | LOG_INFO, LOG, ##__VA_ARGS__); }
+#define SSHBAND_LOGW(LOG, ...)	if (config_log_level >= SSHBAND_LOG_WARN) { syslog(LOG_DAEMON | LOG_WARNING, LOG, ##__VA_ARGS__); }
+#define SSHBAND_LOGE(LOG, ...)	if (config_log_level >= SSHBAND_LOG_ERROR) { syslog(LOG_DAEMON | LOG_ERR, LOG, ##__VA_ARGS__); }
+#define SSHBAND_LOG	SSHBAND_LOGD
+
+extern int8_t config_log_level;
 
 typedef struct hdl_pak_t {
 	u_short sport;

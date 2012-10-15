@@ -22,6 +22,8 @@ uid_t ssh_uid = 120;
 ssh_session_t* sessions[65536] = {NULL};
 long last_cleanup_time = 0;
 
+int8_t config_log_level = SSHBAND_LOG_WARN;
+
 char config_mysql_host[1024] = {0};
 char config_mysql_user[1024] = {0};
 char config_mysql_pass[1024] = {0};
@@ -87,7 +89,7 @@ void save_sql_queue() {
 	
 	fp = fopen("/var/sshband.sql", "w");
 	if (fp == NULL) {
-		fprintf(stderr, "Could not open /var/sshband.sql for write\n");
+		SSHBAND_LOGW("Could not open /var/sshband.sql for writing\n");
 		return ;
 	}
 	
@@ -384,9 +386,9 @@ char* get_config(const char* name) {
 	FILE* fp;
 	
 	config[0] = 0;
-	fp = fopen("/etc/sshband.conf", "r");
+	fp = fopen(SSHBAND_CONFIG_PATH, "r");
 	if (fp == NULL) {
-		fprintf(stderr, "Could not open configure file: %s\n", strerror(errno));
+		SSHBAND_LOGE("Could not open configure file `%s': %s\n", SSHBAND_CONFIG_PATH, strerror(errno));
 		return config;
 	}
 	
@@ -426,13 +428,14 @@ char* get_config(const char* name) {
 }
 
 void load_config() {
+	config_log_level = atoi(get_config("log_level"));
+
 	ssh_port = atoi(get_config("ssh_port"));
 	if (ssh_port == 0) {
-		fprintf(stderr, "Could not find ssh_port in configure file, use default value 22\n");
+		SSHBAND_LOGW("Could not find ssh_port in configure file, use default port 22\n");
 		ssh_port = 22;
 	}
 	ssh_uid = atoi(get_config("ssh_uid"));
-	
 
 	strncpy(config_mysql_pass, get_config("mysql_password"), sizeof(config_mysql_pass) - 1);
 	strncpy(config_mysql_user, get_config("mysql_username"), sizeof(config_mysql_user) - 1);
@@ -471,6 +474,8 @@ static void sshband_exit(int signo) {
 	save_sql_queue();
 	
 	unlink("/var/run/sshband.pid");
+	
+	SSHBAND_LOGI("sshband stopped\n")
 	exit(0);
 }
 
@@ -574,8 +579,10 @@ int main(int argc, char** argv) {
 	reg_signal();
 	
 	if (db_query("SELECT 1") != 0) {
-		fprintf(stderr, "MySQL configure error, please check sshband configure file\n");
-		exit(0);
+		SSHBAND_LOGE("MySQL configure error, please check sshband configure file\n");
+		SSHBAND_LOGI("sshband stopped\n")
+
+		exit(2);
 	}
 	
 	load_sql_queue();
@@ -597,7 +604,9 @@ int main(int argc, char** argv) {
 			fclose(fp);
 		}
 		else {
-			fprintf(stderr, "Could not create pid file: /var/run/sshband.pid\n");
+			SSHBAND_LOGE("Could not create pid file: /var/run/sshband.pid\n");
+			SSHBAND_LOGI("sshband stopped\n")
+
 			exit(1);
 		}
 		

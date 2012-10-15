@@ -1,10 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <libgen.h>
 #include <pwd.h>
+#include "sshband.h"
 #include "userinfo.h"
 
 extern uid_t ssh_uid;
@@ -83,7 +85,7 @@ unsigned long get_inode_by_ipport(unsigned long ip, unsigned short int remote_po
 
 	fp = fopen("/proc/net/tcp", "r");
 	if (fp == NULL) {
-		fprintf(stderr, "Could not open /proc/net/tcp");
+		SSHBAND_LOGE("Could not open /proc/net/tcp: %s", strerror(errno));
 		return 0;
 	}
 	
@@ -149,7 +151,7 @@ uid_t get_uid_by_pid(pid_t pid) {
 	snprintf(status, 200, "/proc/%d/status", pid);
 	fp = fopen(status, "r");
 	if (fp == NULL) {
-		fprintf(stderr, "Could not open %s", status);
+		SSHBAND_LOGE("Could not open %s: %s", status, strerror(errno));
 		return 0;
 	}
 	fread(buf, 1000, 1, fp);	

@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <mysql.h>
-#include "mysql.h"
 #include <stdint.h>
+#include <mysql.h>
+#include "sshband.h"
+#include "mysql.h"
+
 
 extern char config_mysql_host[1024];
 extern char config_mysql_user[1024];
@@ -43,7 +45,7 @@ printf("INSQL: %s\n", sql);
 	 */
 	mysql_init(&mysql);
 	if (!(sock = mysql_real_connect(&mysql, config_mysql_host, config_mysql_user, config_mysql_pass, config_mysql_db, 0, NULL, 0))) {
-		fprintf(stderr, "Could not connect to mysql: %s\n", mysql_error(&mysql));
+		SSHBAND_LOGE("Could not connect to MySQL server `%s': %s\n", config_mysql_host, mysql_error(&mysql));
 		return -1;
 	}
 	
@@ -51,7 +53,7 @@ printf("INSQL: %s\n", sql);
 	while ((p = sql_queue_head) != NULL) {
 		printf("QUERYSQL: %s\n", p->sql);
 		if (mysql_query(sock, p->sql)) {
-			fprintf(stderr, "Could not query sql (%s): %s\n", p->sql, mysql_error(sock));
+			SSHBAND_LOGE("Could not execute SQL(\"%s\") on MySQL server: %s\n", p->sql, mysql_error(sock));
 			//return -2;
 		}
 		
