@@ -10,6 +10,7 @@
 #include "userinfo.h"
 
 extern uid_t ssh_uid;
+extern u_short ssh_port;
 
 int is_sshd_proc(const char* path) {
 	char cmdline[200] = {0};
