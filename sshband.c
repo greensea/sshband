@@ -492,7 +492,6 @@ static void sshband_exit(int signo) {
 			next = sess->next;
 			ssh_session_acct_end(sess);
 			free(sessions[i]);
-			sess = NULL;
 			sess = next;
 		}
 	}

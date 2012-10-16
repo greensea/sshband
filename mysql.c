@@ -59,6 +59,7 @@ int db_destroy() {
 	if (mysql != NULL) {
 		mysql_close(mysql);
 		free(mysql);
+		mysql = NULL;
 	}
 	
 	return 0;
