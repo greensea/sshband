@@ -96,7 +96,7 @@ unsigned long get_inode_by_ipport(unsigned long ip, unsigned short int remote_po
 	while (!feof(fp)) {
 		while(fgetc(fp) != '\n' && !feof(fp));
 		fscanf(fp, "%*d: %*x:%x %lx:%x %*x %*x:%*x %*x:%*x %*x %*d %*d %lu %*d %*d %*x %*d %*d %*d %*d %*d", &lport, &rip, &rport, &sockid);
-		if (lport == 22 && rport == remote_port && rip == ip) {
+		if (lport == ssh_port && rport == remote_port && rip == ip) {
 			break;
 		}
 		sockid = 0;
