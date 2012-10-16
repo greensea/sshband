@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -c -g -pipe -I/usr/include/mysql -D_GNU_SOURCE 
+CFLAGS=-Wall -c -g -pipe -O2 -I/usr/include/mysql -D_GNU_SOURCE 
 LDFLAGS=-lmysqlclient -lpcap
 
 sshband : pcap.o userinfo.o sshband.o mysql.o
