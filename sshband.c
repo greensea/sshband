@@ -24,6 +24,9 @@ long last_cleanup_time = 0;
 
 int8_t config_log_level = SSHBAND_LOG_WARN;
 
+char config_net_device[1024] = {0};
+int config_update_usage_period = UPDATE_USAGE_PERIOD_DEFAULT;
+
 char config_mysql_host[1024] = {0};
 char config_mysql_user[1024] = {0};
 char config_mysql_pass[1024] = {0};
@@ -35,7 +38,6 @@ char config_column_inband[1024] = {0};
 char config_column_outband[1024] = {0};
 char config_column_connecttime[1024] = {0};
 char config_column_disconnecttime[1024] = {0};
-char config_net_device[1024] = {0};
 char config_column_sessionid[1024] = {0};
 char config_column_clientip[1024] = {0};
 char config_column_clientport[1024] = {0};
@@ -66,9 +68,10 @@ void load_sql_queue() {
 	
 	sql_queue_head = p = malloc(sizeof(sql_queue_t));
 	p->next = NULL;
-	fread(p->sql, sizeof(p->sql), 1, fp);
-	SSHBAND_LOGD("Loading SQL queue: %s\n", p->sql);
-	n++;
+	if (fread(p->sql, sizeof(p->sql), 1, fp)) {
+		SSHBAND_LOGD("Loading SQL queue: %s\n", p->sql);
+		n++;
+	}
 	
 	while (fread(sql, sizeof(p->sql), 1, fp)) {
 		p->next = malloc(sizeof(sql_queue_t));
@@ -129,6 +132,7 @@ void save_sql_queue() {
  */
 int ssh_session_init(u_short port, ssh_session_t** sess) {
 	ssh_session_t* newsess = NULL;
+	time_t ts = time(NULL);
 	
 	newsess = malloc(sizeof(ssh_session_t));
 	if (newsess == NULL) {
@@ -138,10 +142,11 @@ int ssh_session_init(u_short port, ssh_session_t** sess) {
 
 	newsess->next = NULL;
 	newsess->uid = -1;
-	newsess->stime = time(NULL);
+	newsess->stime = ts;
 	newsess->outband = 0;
 	newsess->inband = 0;
-	newsess->client_data_time = time(NULL);
+	newsess->client_data_time = ts;
+	newsess->update_usage_time = ts;
 	memset(newsess->sessid, 0x00, sizeof(newsess->sessid));
 	strncpy(newsess->sessid, get_random_sess_id(), sizeof(newsess->sessid) - 1);
 	
@@ -216,13 +221,25 @@ void ssh_session_acct_end(ssh_session_t* sess) {
 	char sql[1024];
 	
 	if (sess == NULL) {
+		SSHBAND_LOGD("%s: Warning: sess == NULL\n", __func__);
 		return;
 	}
 	
 	SSHBAND_LOGD("Session %s from %s is end, updating info into SQL server\n", sess->sessid, sess->client_addr);
 	
-	snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=%llu, %s=%llu, %s=FROM_UNIXTIME(%lu)  WHERE %s='%s'", config_table_acct, config_column_inband, sess->inband, config_column_outband, sess->outband, config_column_disconnecttime, sess->client_data_time, config_column_sessionid, sess->sessid);
-	//printf("sql=%s\n", sql);
+	ssh_session_acct_update(sess);
+	
+	snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=FROM_UNIXTIME(%lu)  WHERE %s='%s'", config_table_acct, config_column_disconnecttime, sess->client_data_time, config_column_sessionid, sess->sessid);
+	db_query(sql);	
+}
+
+/**
+ * 更新用户流量数据
+ */
+void ssh_session_acct_update(ssh_session_t* sess) {
+	char sql[1024];
+	
+	snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=%llu, %s=%llu WHERE %s='%s'", config_table_acct, config_column_inband, sess->inband, config_column_outband, sess->outband, config_column_sessionid, sess->sessid);
 	db_query(sql);	
 }
 
@@ -325,6 +342,7 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 	int *ipval, *ipval2;
 	ssh_session_t *sess;
 	struct in_addr ip;
+	time_t ts = time(NULL);
 	
 	
 	if (pak.dport == ssh_port) {
@@ -339,9 +357,10 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 	}
 	
 	// 定时清理非正常断开的客户端
-	if (time(NULL) - last_cleanup_time > SESSION_CLEANUP_TIME) {
+	if (ts - last_cleanup_time > SESSION_CLEANUP_TIME) {
 		ssh_session_cleanup();
 	}
+
 	
 	/** 
 	 * 在哈希链表中查找对应的会话节点
@@ -376,12 +395,21 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 		}
 	}
 	
+	/// 累加用户流量
 	if (pak.sport == ssh_port) {
 		sess->outband += pak.len;
 	}
 	else {
 		sess->inband += pak.len;
-		sess->client_data_time = time(NULL);
+		sess->client_data_time = ts;
+	}
+	
+	/// 定时更新用户流量到数据库
+	if (sess->uid != -1 && config_update_usage_period > 0 && ts - sess->update_usage_time >= config_update_usage_period) {
+		SSHBAND_LOGD("Updating session %s used bandwidth into database, in=%lldbytes out=%lldbytes\n", sess->sessid, sess->inband, sess->outband);
+		
+		ssh_session_acct_update(sess);
+		sess->update_usage_time = ts;
 	}
 }
 
@@ -461,7 +489,14 @@ void load_config() {
 		SSHBAND_LOGW("Could not find ssh_port in configure file, use default port 22\n");
 		ssh_port = 22;
 	}
+	
 	ssh_uid = atoi(get_config("ssh_uid"));
+
+	config_update_usage_period = atoi(get_config("update_period"));
+	if (config_update_usage_period < 0) {
+		SSHBAND_LOGW("Could not find update_period in configure file, use default value %d\n", UPDATE_USAGE_PERIOD_DEFAULT);
+		config_update_usage_period = UPDATE_USAGE_PERIOD_DEFAULT;
+	}
 
 	strncpy(config_mysql_pass, get_config("mysql_password"), sizeof(config_mysql_pass) - 1);
 	strncpy(config_mysql_user, get_config("mysql_username"), sizeof(config_mysql_user) - 1);

@@ -13,6 +13,12 @@
  */
 #define SESSION_CLEANUP_TIME 120
 
+
+/**
+ * 默认的定时更新用户流量使用信息的时间间隔，单位：秒
+ */
+#define UPDATE_USAGE_PERIOD_DEFAULT 120
+
 /**
  * sshband 配置文件路径
  */
@@ -46,6 +52,7 @@ typedef struct hdl_pak_t {
 typedef struct ssh_session_t {
 	uid_t uid;
 	u_long client_data_time;	// 最后一次收到客户端数据包的时间
+	time_t update_usage_time;	// 上一次向数据库更新用户流量数据的时间
 	u_long stime;	// 会话启动时间
 	unsigned long long outband;	// 服务器端上行流量
 	unsigned long long inband;	// 服务器下行流量
@@ -58,5 +65,6 @@ typedef struct ssh_session_t {
 
 void load_config();	
 void ssh_session_cleanup();
+void ssh_session_acct_update(ssh_session_t* sess);
 
 #endif

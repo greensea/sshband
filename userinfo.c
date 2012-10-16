@@ -16,6 +16,7 @@ int is_sshd_proc(const char* path) {
 	char cmdline[200] = {0};
 	char buf[1024] = {0};
 	FILE* fp;
+	size_t readb;
 
 	snprintf(cmdline, 199, "/proc/%s/cmdline", path);
 
@@ -23,7 +24,7 @@ int is_sshd_proc(const char* path) {
 	if (fp == NULL) {
 		return 0;
 	}
-	fread(buf, 1000, 1, fp);
+	readb = fread(buf, 1000, 1, fp);
 	fclose(fp);
 	
 	char* m_pos = NULL;
@@ -83,6 +84,7 @@ int proc_inode_exists(const char* proc, unsigned long ino) {
 
 unsigned long get_inode_by_ipport(unsigned long ip, unsigned short int remote_port) {
 	FILE* fp;
+	size_t readb;
 	unsigned long sockid = 0;
 	unsigned int lport = 0;
 	unsigned int rport = 0;
@@ -96,7 +98,7 @@ unsigned long get_inode_by_ipport(unsigned long ip, unsigned short int remote_po
 	
 	while (!feof(fp)) {
 		while(fgetc(fp) != '\n' && !feof(fp));
-		fscanf(fp, "%*d: %*x:%x %lx:%x %*x %*x:%*x %*x:%*x %*x %*d %*d %lu %*d %*d %*x %*d %*d %*d %*d %*d", &lport, &rip, &rport, &sockid);
+		readb = fscanf(fp, "%*d: %*x:%x %lx:%x %*x %*x:%*x %*x:%*x %*x %*d %*d %lu %*d %*d %*x %*d %*d %*d %*d %*d", &lport, &rip, &rport, &sockid);
 		if (lport == ssh_port && rport == remote_port && rip == ip) {
 			break;
 		}
@@ -149,6 +151,7 @@ pid_t get_pid_by_inode(unsigned long inode) {
 
 uid_t get_uid_by_pid(pid_t pid) {
 	uid_t ruid = -1;
+	size_t readb;
 	char status[1000] = {0};
 	char buf[1001] = {0};
 	char* buf2;
@@ -166,7 +169,7 @@ uid_t get_uid_by_pid(pid_t pid) {
 		SSHBAND_LOGE("Could not open %s: %s", status, strerror(errno));
 		return 0;
 	}
-	fread(buf, 1000, 1, fp);	
+	readb = fread(buf, 1000, 1, fp);	
 	fclose(fp);
 	
 	buf2 = strstr(buf, "Uid");
