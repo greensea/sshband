@@ -10,6 +10,7 @@ typedef u_int32_t tcp_seq;
 /* Ethernet addresses are 6 bytes */
 #define ETHER_ADDR_LEN	6
 #define SIZE_ETHERNET 14
+#define SIZE_LINUXSLL 16
 
 	/* Ethernet header */
 	typedef struct sniff_ethernet {

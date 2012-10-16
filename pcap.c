@@ -18,10 +18,11 @@
 
 extern char config_net_device[1024];
 extern u_short ssh_port;
-static  int  link_type = 0;
+static int link_type = 0;
+static int link_header_length = 0;
 
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
-	const struct sniff_ethernet *ethernet; /* The ethernet header */
+	//const struct sniff_ethernet *ethernet; /* The ethernet header */
 	const struct sniff_ip *ip; /* The IP header */
 	const struct sniff_tcp *tcp; /* The TCP header */
 	//const char *payload; /* Packet payload */
@@ -30,14 +31,14 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	u_int size_ip;
 	u_int size_tcp;
 
-	ethernet = (struct sniff_ethernet*)(packet);
-	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET );
+	//ethernet = (struct sniff_ethernet*)(packet);
+	ip = (struct sniff_ip*)(packet + link_header_length );
 	size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
 		SSHBAND_LOGD("   * Invalid IP header length: %u bytes\n", size_ip);
 		return;
 	}
-	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
+	tcp = (struct sniff_tcp*)(packet + link_header_length + size_ip);
 	size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
 		SSHBAND_LOGD("   * Invalid TCP header length: %u bytes\n", size_tcp);
@@ -89,10 +90,20 @@ int pcap_main() {
 	
 	SSHBAND_LOGI("Data link type is %s(%d)   ",  link_type_name, link_type);
 	
-	if (link_type != DLT_EN10MB  &&  link_type != DLT_LINUX_SLL) {	
-		SSHBAND_LOGE("Not support link type %s(%d) ",  link_type_name, link_type);
-		return(2);	
+	switch (link_type) {
+		case DLT_EN10MB:
+			link_header_length = SIZE_ETHERNET;
+			break;
+			
+		case DLT_LINUX_SLL:
+			link_header_length = SIZE_LINUXSLL;
+			break;
+			
+		default:	
+			SSHBAND_LOGE("Not support link type %s(%d) ",  link_type_name, link_type);
+			return(2);	
 	}
+	
 	
 	if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
 		SSHBAND_LOGE("Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
