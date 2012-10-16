@@ -358,7 +358,7 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 		char ipstr[19] = {0};
 		
 		strncpy(ipstr, inet_ntoa(pak.ip_src), sizeof(ipstr) - 1);
-		SSHBAND_LOGD("Receive packet from %s:%d, but not session is not found in session list\n", ipstr, rport);
+		SSHBAND_LOGMD("Receive packet from %s:%d, but not session is not found in session list\n", ipstr, rport);
 		return;
 	}
 	
