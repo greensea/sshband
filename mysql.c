@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <mysql.h>
 #include <errno.h>
+#include <unistd.h>
 #include "sshband.h"
 #include "mysql.h"
 
@@ -19,8 +20,9 @@ sql_queue_t* sql_queue_head = NULL;
 MYSQL* mysql = NULL;
 
 int db_init() {
-	MYSQL* sock;
+	MYSQL* sock = NULL;
 	my_bool yes = 1;
+	int slptime = 0;
 	
 	if (mysql != NULL) {
 		SSHBAND_LOGD("MYSQL* mysql is already initilized\n");
@@ -41,13 +43,23 @@ int db_init() {
 	}
 	
 	/// 尝试连接数据库
-	SSHBAND_LOGI("Connecting to MySQL server %s...\n", config_mysql_host);
-	sock = mysql_real_connect(mysql, config_mysql_host, config_mysql_user, config_mysql_pass, config_mysql_db, 0, NULL, 0);
-	if (sock == NULL) {
-		SSHBAND_LOGE("Could not connect to MySQL server `%s': %s\n", config_mysql_host, mysql_error(mysql));
-	}
-	else {
-		SSHBAND_LOGI("Connected to MySQL server %s\n", config_mysql_host);
+	while (sock == NULL) {
+		SSHBAND_LOGI("Connecting to MySQL server %s...\n", config_mysql_host);
+		sock = mysql_real_connect(mysql, config_mysql_host, config_mysql_user, config_mysql_pass, config_mysql_db, 0, NULL, 0);
+		if (sock == NULL) {
+			SSHBAND_LOGE("Could not connect to MySQL server `%s': %s\n", config_mysql_host, mysql_error(mysql));
+
+			slptime += 10;
+			if (slptime > 300) {	// 5 min
+				slptime = 300;
+			}
+
+			SSHBAND_LOGI("Retry after %d seconds\n", slptime);			
+			sleep(slptime);
+		}
+		else {
+			SSHBAND_LOGI("Connected to MySQL server %s\n", config_mysql_host);
+		}
 	}
 	
 	mysql_options(mysql, MYSQL_OPT_RECONNECT, &yes);
