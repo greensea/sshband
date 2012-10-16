@@ -262,7 +262,7 @@ int ssh_session_delete(ssh_session_t *sess,  int rport)
 			free(cur);		
 		}
 		else {
-			SSHBAND_LOG("error  %s   %d",  __FUNCTION__,  __LINE__);		
+			SSHBAND_LOGD("error  %s   %d",  __FUNCTION__,  __LINE__);		
 		}				
 	}
 	return 0;
@@ -505,6 +505,8 @@ static void sshband_exit(int signo) {
 	
 	SSHBAND_LOGI("sshband stopped\n");
 	
+	closelog();	/// 关闭 Syslog
+	
 	exit(0);
 }
 
@@ -600,11 +602,13 @@ void ssh_session_cleanup()
 		}
 	}
 	last_cleanup_time = time(NULL);
-	SSHBAND_LOG("%s: clean out", __func__);
+	SSHBAND_LOGD("%s: clean out", __func__);
 }
 
 
 int main(int argc, char** argv) {
+	openlog(basename(argv[0]), LOG_PID, LOG_INFO | LOG_DAEMON);	/// 初始化 Syslog
+	
 	load_config();
 	reg_signal();
 	
