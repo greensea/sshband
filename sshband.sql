@@ -9,5 +9,6 @@ CREATE TABLE `sshacct` (
   `clientip` char(15) NOT NULL,
   `sessionid` char(32) NOT NULL,
   `clientport` int(11) NOT NULL,
-  PRIMARY KEY  (`id`)
+  PRIMARY KEY  (`id`),
+  KEY `sessionid` (`sessionid`)
 );
