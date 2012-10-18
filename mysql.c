@@ -61,7 +61,7 @@ int db_init() {
 	/// 尝试连接数据库
 	while (sock == NULL) {
 		SSHBAND_LOGI("Connecting to MySQL server %s...\n", config_mysql_host);
-		sock = mysql_real_connect(mysql, config_mysql_host, config_mysql_user, config_mysql_pass, config_mysql_db, 0, NULL, 0);
+		sock = mysql_real_connect(mysql, config_mysql_host, config_mysql_user, config_mysql_pass, config_mysql_db, 0, NULL, CLIENT_MULTI_STATEMENTS);
 		if (sock == NULL) {
 			SSHBAND_LOGE("Could not connect to MySQL server `%s': %s\n", config_mysql_host, mysql_error(mysql));
 
@@ -96,6 +96,8 @@ int db_destroy() {
 int db_query(const char* sql) {
 	sql_queue_t* p;
 	sql_queue_t* tmp;
+    MYSQL_RES* res;
+    int fieldcnt;
 
 	/// FIXME: 增加 addslash 函数，对 SQL 语句进行转义，防止注入
 	
@@ -141,8 +143,26 @@ int db_query(const char* sql) {
 			SSHBAND_LOGE("Could not execute SQL(\"%s\") on MySQL server: %s\n", p->sql, mysql_error(mysql));
 			//return -2;
 		}
+        else {
+            /// 查询成功 *必须* 清除结果集
+            do {
+                fieldcnt = mysql_field_count(mysql);
+                res = mysql_store_result(mysql);
+                if (res == NULL) {
+                    if (fieldcnt > 0) {
+                        SSHBAND_LOGE("Could not store MySQL result: %s\n", mysql_error(mysql));
+                    }
+                    continue;
+                }
+                else {
+                    SSHBAND_LOGD("Processed result\n");
+                    mysql_free_result(res);
+                }
+            } while (mysql_next_result(mysql) == 0);
+        }
+        
 		/**
-		 * 查询成功，删除队列中的语句
+		 * 删除队列中的语句
 		 */
 		sql_queue_head = p->next;
 		free(p);
