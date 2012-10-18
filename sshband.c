@@ -19,7 +19,6 @@ extern sql_queue_t* sql_queue_head;
 
 u_short ssh_port = 22;
 uid_t ssh_uid = 120;
-char server_addr[19] = {0};
 static ssh_session_t* sessions[65536] = {NULL};
 static long last_cleanup_time = 0;
 
@@ -142,6 +141,7 @@ int ssh_session_init(u_short port, ssh_session_t** sess) {
 		return -1;
 	}
 
+	memset(newsess, 0x00, sizeof(ssh_session_t));
 	newsess->next = NULL;
 	newsess->uid = -1;
 	newsess->stime = ts;
@@ -181,7 +181,7 @@ void ssh_session_acct_new(ssh_session_t* sess, u_short rport) {
 	 */
 	if (sqlacct.fmt.login[0] != 0x00) {
 		snprintf(sql, sizeof(sql) - 1, sqlacct.fmt.login, "0", "0", get_name_by_uid(sess->uid), time(NULL),
-														   sess->stime, sess->client_addr, (int)rport, server_addr,
+														   sess->stime, sess->client_addr, (int)rport, sess->server_addr,
 														   sess->sessid, (time_t)0, (unsigned int)sess->uid);
 		db_query(sql);
 	}
@@ -192,14 +192,17 @@ void ssh_session_start(hdl_pak_t pak) {
 	int *ipval, *ipval2;
 	ssh_session_t* sess;
 	struct in_addr ip;
+	struct in_addr sip;
 	
 	if (pak.dport == ssh_port) {
 		rport = pak.sport;
 		ip = pak.ip_src;
+		sip = pak.ip_dst;
 	}
 	else {
 		rport = pak.dport;
 		ip = pak.ip_dst;
+		sip = pak.ip_src;
 	}
 	
 	/**
@@ -221,6 +224,7 @@ void ssh_session_start(hdl_pak_t pak) {
 
 	if (0 == ssh_session_init(rport, &sess)) {
 		strncpy(sess->client_addr, inet_ntoa(ip), sizeof(sess->client_addr) - 1);
+		strncpy(sess->server_addr, inet_ntoa(sip), sizeof(sess->server_addr) - 1);
 		sess->ip = ip;		
 	}
 }
@@ -247,7 +251,7 @@ void ssh_session_acct_end(ssh_session_t* sess) {
 	/// 参数顺序请参考 filedfmt_tbl
 	if (sqlacct.fmt.logout[0] != 0x00) {
 		snprintf(sql, sizeof(sql) - 1, sqlacct.fmt.logout, inbandstr, outbandstr, get_name_by_uid(sess->uid), time(NULL),
-														   sess->stime, sess->client_addr, 0, server_addr,
+														   sess->stime, sess->client_addr, 0, sess->server_addr,
 														   sess->sessid, sess->client_data_time, (unsigned int)sess->uid);
 
 		db_query(sql);
@@ -270,7 +274,7 @@ void ssh_session_acct_update(ssh_session_t* sess) {
 	/// 参数顺序请参考 filedfmt_tbl
 	if (sqlacct.fmt.update[0] != 0x00) {
 		snprintf(sql, sizeof(sql) - 1, sqlacct.fmt.update, inbandstr, outbandstr, get_name_by_uid(sess->uid), time(NULL),
-	                                                   sess->stime, sess->client_addr, 0, server_addr,
+	                                                   sess->stime, sess->client_addr, 0, sess->server_addr,
 	                                                   sess->sessid, sess->client_data_time, (unsigned int)sess->uid);	
 	
 		db_query(sql);
@@ -411,7 +415,7 @@ void ssh_session_gotpack(hdl_pak_t pak) {
 		char ipstr[19] = {0};
 		
 		strncpy(ipstr, inet_ntoa(pak.ip_src), sizeof(ipstr) - 1);
-		SSHBAND_LOGMD("Receive packet from %s:%d, but not session is not found in session list\n", ipstr, rport);
+		SSHBAND_LOGMD("Receive packet from %s:%d, but not session is found in session list\n", ipstr, rport);
 		return;
 	}
 	

@@ -59,6 +59,7 @@ typedef struct ssh_session_t {
 	unsigned long long outband;	// 服务器端上行流量
 	unsigned long long inband;	// 服务器下行流量
 	char client_addr[17];	// 客户端地址
+	char server_addr[17]; // 用户连接服务器使用的服务器端 IP 地址
 	char sessid[33];	// 会话唯一标识
 	
 	struct in_addr ip;
