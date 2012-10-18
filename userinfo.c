@@ -207,12 +207,4 @@ char* get_name_by_uid(uid_t uid) {
 	
 	return name;
 }
-	
-/*
-int main() {
 
-	get_uid_by_port(1983);
-	
-	return 0;
-}
-*/

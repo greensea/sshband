@@ -51,17 +51,29 @@ typedef struct hdl_pak_t {
 
 typedef struct ssh_session_t {
 	uid_t uid;
+	
 	u_long client_data_time;	// 最后一次收到客户端数据包的时间
 	time_t update_usage_time;	// 上一次向数据库更新用户流量数据的时间
 	u_long stime;	// 会话启动时间
+	
 	unsigned long long outband;	// 服务器端上行流量
 	unsigned long long inband;	// 服务器下行流量
 	char client_addr[17];	// 客户端地址
 	char sessid[33];	// 会话唯一标识
+	
 	struct in_addr ip;
 	struct ssh_session_t* next;
 } ssh_session_t;
-	
+
+
+typedef struct acctsql_t {
+	struct {
+		char login[1024];
+		char update[1024];
+		char logout[1024];
+	} fmt;
+} acctsql_t;
+
 
 void load_config();	
 void ssh_session_cleanup();

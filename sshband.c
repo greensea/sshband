@@ -19,8 +19,9 @@ extern sql_queue_t* sql_queue_head;
 
 u_short ssh_port = 22;
 uid_t ssh_uid = 120;
-ssh_session_t* sessions[65536] = {NULL};
-long last_cleanup_time = 0;
+char server_addr[19] = {0};
+static ssh_session_t* sessions[65536] = {NULL};
+static long last_cleanup_time = 0;
 
 int8_t config_log_level = SSHBAND_LOG_WARN;
 
@@ -31,16 +32,17 @@ char config_mysql_host[1024] = {0};
 char config_mysql_user[1024] = {0};
 char config_mysql_pass[1024] = {0};
 char config_mysql_db[1024] = {0};
-char config_table_acct[1024] = {0};
-char config_column_uid[1024] = {0};
-char config_column_username[1024] = {0};
-char config_column_inband[1024] = {0};
-char config_column_outband[1024] = {0};
-char config_column_connecttime[1024] = {0};
-char config_column_disconnecttime[1024] = {0};
-char config_column_sessionid[1024] = {0};
-char config_column_clientip[1024] = {0};
-char config_column_clientport[1024] = {0};
+char config_sql_login[1024] = {0};
+char config_sql_logout[1024] = {0};
+char config_sql_update[1024] = {0};
+
+struct acctsql_t sqlacct;
+
+static char* uultostr(char* ptr, size_t siz, unsigned long long n) {
+    snprintf(ptr, siz - 1, "%llu", n);
+    
+    return ptr;
+}
 
 const char* get_random_sess_id() {
 	int i;
@@ -167,16 +169,22 @@ int ssh_session_init(u_short port, ssh_session_t** sess) {
 void ssh_session_acct_new(ssh_session_t* sess, u_short rport) {
 	char sql[1024] = {0};
 	
-	if (sess == NULL) {
-		return;
-	}
-	else {
-	}
-
 	SSHBAND_LOGD("Insert new client %s(%s) info into SQL server\n", sess->client_addr, sess->sessid);
+
+	//snprintf(sql, sizeof(sql) - 1, "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (%d, FROM_UNIXTIME(%lu), '%s', '%s', '%s', %u)", config_table_acct, config_column_uid, config_column_connecttime, config_column_username, config_column_sessionid, config_column_clientip, config_column_clientport, sess->uid, sess->stime, get_name_by_uid(sess->uid), sess->sessid, sess->client_addr, rport);
+
 	
-	snprintf(sql, sizeof(sql) - 1, "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (%d, FROM_UNIXTIME(%lu), '%s', '%s', '%s', %u)", config_table_acct, config_column_uid, config_column_connecttime, config_column_username, config_column_sessionid, config_column_clientip, config_column_clientport, sess->uid, sess->stime, get_name_by_uid(sess->uid), sess->sessid, sess->client_addr, rport);
-	db_query(sql);
+	/// 参数顺序请参考 filedfmt_tbl
+	/**                                               inband, outband, username, timestamp
+	 *                                                starttime, clientip, cilentport, serverip
+	 *                                                sessionid, clientdatatime, uid
+	 */
+	if (sqlacct.fmt.login[0] != 0x00) {
+		snprintf(sql, sizeof(sql) - 1, sqlacct.fmt.login, "0", "0", get_name_by_uid(sess->uid), time(NULL),
+														   sess->stime, sess->client_addr, (int)rport, server_addr,
+														   sess->sessid, (time_t)0, (unsigned int)sess->uid);
+		db_query(sql);
+	}
 }
 
 void ssh_session_start(hdl_pak_t pak) {
@@ -218,29 +226,55 @@ void ssh_session_start(hdl_pak_t pak) {
 }
 
 void ssh_session_acct_end(ssh_session_t* sess) {
-	char sql[1024];
+    char sql[1024];
+    char inbandstr[20] = {0};
+    char outbandstr[20] = {0};
 	
 	if (sess == NULL) {
 		SSHBAND_LOGD("%s: Warning: sess == NULL\n", __func__);
 		return;
 	}
+    
+    uultostr(inbandstr, sizeof(inbandstr), sess->inband);
+    uultostr(outbandstr, sizeof(outbandstr), sess->outband);
 	
 	SSHBAND_LOGD("Session %s from %s is end, updating info into SQL server\n", sess->sessid, sess->client_addr);
 	
 	ssh_session_acct_update(sess);
 	
-	snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=FROM_UNIXTIME(%lu)  WHERE %s='%s'", config_table_acct, config_column_disconnecttime, sess->client_data_time, config_column_sessionid, sess->sessid);
-	db_query(sql);	
+	//snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=FROM_UNIXTIME(%lu)  WHERE %s='%s'", config_table_acct, config_column_disconnecttime, sess->client_data_time, config_column_sessionid, sess->sessid);
+	
+	/// 参数顺序请参考 filedfmt_tbl
+	if (sqlacct.fmt.logout[0] != 0x00) {
+		snprintf(sql, sizeof(sql) - 1, sqlacct.fmt.logout, inbandstr, outbandstr, get_name_by_uid(sess->uid), time(NULL),
+														   sess->stime, sess->client_addr, 0, server_addr,
+														   sess->sessid, sess->client_data_time, (unsigned int)sess->uid);
+
+		db_query(sql);
+	}
 }
 
 /**
  * 更新用户流量数据
  */
 void ssh_session_acct_update(ssh_session_t* sess) {
-	char sql[1024];
+    char sql[1024];
+    char inbandstr[20] = {0};
+    char outbandstr[20] = {0};
+    
+    uultostr(inbandstr, sizeof(inbandstr), sess->inband);
+    uultostr(outbandstr, sizeof(outbandstr), sess->outband);
 	
-	snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=%llu, %s=%llu WHERE %s='%s'", config_table_acct, config_column_inband, sess->inband, config_column_outband, sess->outband, config_column_sessionid, sess->sessid);
-	db_query(sql);	
+	//snprintf(sql, sizeof(sql) - 1, "UPDATE %s SET %s=%llu, %s=%llu WHERE %s='%s'", config_table_acct, config_column_inband, sess->inband, config_column_outband, sess->outband, config_column_sessionid, sess->sessid);
+
+	/// 参数顺序请参考 filedfmt_tbl
+	if (sqlacct.fmt.update[0] != 0x00) {
+		snprintf(sql, sizeof(sql) - 1, sqlacct.fmt.update, inbandstr, outbandstr, get_name_by_uid(sess->uid), time(NULL),
+	                                                   sess->stime, sess->client_addr, 0, server_addr,
+	                                                   sess->sessid, sess->client_data_time, (unsigned int)sess->uid);	
+	
+		db_query(sql);
+	}
 }
 
 /**
@@ -252,9 +286,9 @@ int ssh_session_delete(ssh_session_t *sess,  int rport)
 	ssh_session_t *cur = NULL;    //ssh_session_t *next = NULL;
 	int found;
 	
-	 // 删除会话节点
-	 // 如果会话节点在哈希表中，直接删除即可
-	 // 如果在链表中，就需要链表中的删除节点操作	 
+    // 删除会话节点
+	// 如果会话节点在哈希表中，直接删除即可
+	// 如果在链表中，就需要链表中的删除节点操作	 
 	if (sess == sessions[rport]) {
 		sessions[rport] = sessions[rport]->next;
 		free(sess);
@@ -431,10 +465,35 @@ void sshband_handler(hdl_pak_t pak) {
 	//printf("\t%d", get_uid_by_port(pak.sport == 22 ? pak.dport : pak.sport));
 }
 
+/**
+ * 去除字符串首尾的特定字符
+ * 
+ * @param char* 需要处理的字符串
+ * @param char  需要取出的字符，如果这个参数是 ' '，就相当于去除字符串首尾的空格
+ * @param char* 指向 str
+ */
+char* strtrm(char* str, char c) {
+    int k = 0;
+    int n;
+    
+    for (n = 0; str[n] != 0x00 && str[n] == c; n++);   /// 计算前导字符数
+    memmove(str, str + n, strlen(str + n) + 1);
+    
+    k = strlen(str) - 1;
+
+    while (k >= 0 && str[k] == c) {
+        str[k] = 0x00;
+        k--;
+    }
+    
+    return str;
+}
+
+
 char* get_config(const char* name) {
-	static char config[256] = {0};
+	static char config[1024];
 	char* value;
-	char line[256] = {0};
+	char line[1024] = {0};
 	char c;
 	int i;
 	FILE* fp;
@@ -447,35 +506,39 @@ char* get_config(const char* name) {
 	}
 	
 	while (!feof(fp)) {
-		// 读入一行，跳过白字符
+		// 读入一行，并跳过换行符
 		i = 0;
-		while (!feof(fp) && (c = fgetc(fp)) != '\n') {
-			if (c == '\t' || c == ' ') continue;
+		while (!feof(fp) && (c = fgetc(fp)) != '\n' && c != '\r') {
 			line[i] = c;
 			i++;
-			if (i == 255) break;
+			if (i == sizeof(line) - 1) break;
 		}
-		line[i] = 0;
+		line[i] = 0x00;
+        
+        strtrm(line, ' ');
+        strtrm(line, '\t');
 
-		// 判断是否注释
-		for (i = 0; i < 256; i++) {
-			c = line[i];
-			if (c != '\t' && c != ' ') break;
-		}
-		if (line[i] == '#') continue;
+		// 判断是否是注释
+		if (line[0] == '#') continue;
 
 		value = strchr(line, '=');
 		if (value != NULL) {
 			line[value - line] = 0;
-			
+            strtrm(line, ' ');
+            strtrm(line, '\t');
 		}
 	
 		if (0 == strcmp(line, name)) {
-			strncpy(config, value + 1, 255);
-			
+			strncpy(config, value + 1, sizeof(config) - 1);
+            config[sizeof(config) - 1] = 0x00;
+            
+			strtrm(config, ' ');
+			strtrm(config, '\t');
+            
 			break;
 		}
 	}
+    
 	fclose(fp);
 	
 	return config;
@@ -503,18 +566,16 @@ void load_config() {
 	strncpy(config_mysql_db, get_config("mysql_database"), sizeof(config_mysql_db) - 1);
 	strncpy(config_mysql_host, get_config("mysql_host"), sizeof(config_mysql_host) - 1);
 
-	strncpy(config_table_acct, get_config("mysql_table_acct"), sizeof(config_table_acct) - 1);
-	strncpy(config_column_uid, get_config("mysql_column_uid"), sizeof(config_column_uid) - 1);
-	strncpy(config_column_username, get_config("mysql_column_username"), sizeof(config_column_username) - 1);
-	strncpy(config_column_inband, get_config("mysql_column_inband"), sizeof(config_column_inband) - 1);
-	strncpy(config_column_outband, get_config("mysql_column_outband"), sizeof(config_column_outband) - 1);
-	strncpy(config_column_connecttime, get_config("mysql_column_connecttime"), sizeof(config_column_connecttime) - 1);
-	strncpy(config_column_disconnecttime, get_config("mysql_column_disconnecttime"), sizeof(config_column_disconnecttime) - 1);
-	strncpy(config_column_sessionid, get_config("mysql_column_sessionid"), sizeof(config_column_sessionid) - 1);
-	strncpy(config_column_clientip, get_config("mysql_column_clientip"), sizeof(config_column_sessionid) - 1);
-	strncpy(config_column_clientport, get_config("mysql_column_clientport"), sizeof(config_column_sessionid) - 1);
-	
 	strncpy(config_net_device, get_config("network_device"), sizeof(config_net_device) - 1);	
+
+	strncpy(config_sql_login, get_config("sql_login"), sizeof(config_sql_login) - 1);
+	strncpy(config_sql_update, get_config("sql_update"), sizeof(config_sql_update) - 1);
+	strncpy(config_sql_logout, get_config("sql_logout"), sizeof(config_sql_logout) - 1);
+
+    memset(&sqlacct.fmt, 0x00, sizeof(sqlacct.fmt));
+    sql_config2fmt(config_sql_login, sqlacct.fmt.login, sizeof(sqlacct.fmt.login));
+    sql_config2fmt(config_sql_update, sqlacct.fmt.update, sizeof(sqlacct.fmt.update));
+    sql_config2fmt(config_sql_logout, sqlacct.fmt.logout, sizeof(sqlacct.fmt.logout));
 }
 
 static void sshband_exit(int signo) {
@@ -548,6 +609,9 @@ int reg_signal() {
 	struct sigaction sig_term;
 	struct sigaction sig_int;
 	
+    memset(&sig_term, 0x00, sizeof(sig_term));
+    memset(&sig_int, 0x00, sizeof(sig_int));
+    
 	sigemptyset(&sig_term.sa_mask);
 	sigemptyset(&sig_int.sa_mask);
 	
@@ -645,18 +709,7 @@ int main(int argc, char** argv) {
 	
 	load_config();
 	reg_signal();
-	
-	/// 检查 SQL 服务器是否正常
-	if (db_init() != 0) {
-		SSHBAND_LOGE("MySQL configure error, please check sshband configure file\n");
-
-		sshband_exit(2);
-	}
-	
-	load_sql_queue();
-	
-	srand(time(NULL));
-	
+		
 	/**
 	 * 转入守护进程
 	 */
@@ -675,7 +728,19 @@ int main(int argc, char** argv) {
 			SSHBAND_LOGE("Could not create pid file: /var/run/sshband.pid\n");
 			sshband_exit(1);
 		}
+
+		/// 检查 SQL 服务器是否正常
+		if (db_init() != 0) {
+			SSHBAND_LOGE("MySQL configure error, please check sshband configure file\n");
+
+			sshband_exit(2);
+		}
 		
+		load_sql_queue();
+		
+		srand(time(NULL));
+		last_cleanup_time = time(NULL);
+
 		pcap_main();
 	}
 	
