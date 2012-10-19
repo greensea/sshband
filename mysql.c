@@ -1,3 +1,8 @@
+#ifdef _FORTIFY_SOURCE
+#undef _FORTIFY_SOURCE
+#define _FORTIFY_SOURCE 1   /// 禁止 glibc 对 *printf 的 %N$ 进行参数完整性检查
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
