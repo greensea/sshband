@@ -202,7 +202,7 @@ char* get_name_by_uid(uid_t uid) {
 	static char name[32] = {0};
 	
 	if ((pwd = getpwuid(uid)) != NULL) {
-		strncpy(name, pwd->pw_name, 31);
+		strncpy(name, pwd->pw_name, sizeof(name) - 1);
 	}
 	
 	return name;
