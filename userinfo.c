@@ -24,8 +24,13 @@ int is_sshd_proc(const char* path) {
 	if (fp == NULL) {
 		return 0;
 	}
-	readb = fread(buf, 1000, 1, fp);
+	readb = fread(buf, 1, sizeof(buf), fp);
 	fclose(fp);
+
+	if (readb <= 0) {
+		SSHBAND_LOGW("Can't read %s, readb()=%d: %s\n", cmdline, readb, strerror(errno));
+		return 0;
+	}
 	
 	char* m_pos = NULL;
 	m_pos = strrchr(buf, ':');
@@ -98,11 +103,14 @@ unsigned long get_inode_by_ipport(unsigned long ip, unsigned short int remote_po
 	
 	while (!feof(fp)) {
 		while(fgetc(fp) != '\n' && !feof(fp));
+
 		readb = fscanf(fp, "%*d: %*x:%x %lx:%x %*x %*x:%*x %*x:%*x %*x %*d %*d %lu %*d %*d %*x %*d %*d %*d %*d %*d", &lport, &rip, &rport, &sockid);
 		if (lport == ssh_port && rport == remote_port && rip == ip) {
 			break;
 		}
-		sockid = 0;
+		else {
+			sockid = 0;
+		}
 	}
 
 	fclose(fp);
@@ -123,7 +131,7 @@ pid_t get_pid_by_inode(unsigned long inode) {
 		if (atoi(ent->d_name) == 0) {
 			continue;
 		}
-		//if (is_sshd_proc(ent->d_name) == 1) {
+		if (is_sshd_proc(ent->d_name) == 1) {
 			if (proc_inode_exists(ent->d_name, inode) == 1) {
 				// 根据UID判断进程不是root或sshd的才返回
 				uid_t uid;
@@ -139,7 +147,7 @@ pid_t get_pid_by_inode(unsigned long inode) {
 			//		printf("inode=%lu, proc=%s, uid=%d\n", inode, ent->d_name, uid);
 				}
 			}
-		//}
+		}
 	}
 	
 	SSHBAND_LOGMD("No pid match to inode %lu\n", inode);
@@ -171,6 +179,11 @@ uid_t get_uid_by_pid(pid_t pid) {
 	}
 	readb = fread(buf, 1000, 1, fp);	
 	fclose(fp);
+
+	if (readb <= 0) {
+		SSHBAND_LOGW("Can't read %s, fread()=%d: %s\n", status, readb, strerror(errno));
+		return 0;
+	}
 	
 	buf2 = strstr(buf, "Uid");
 	sscanf(buf2, "Uid: %ld %ld %ld %ld", &uid, &euid, &suid, &fsuid);
@@ -184,12 +197,20 @@ uid_t get_uid_by_pid(pid_t pid) {
 uid_t get_uid_by_ipport(unsigned long ip, unsigned short int rport) {
 	unsigned long inode;
 	pid_t pid = 0;
-	uid_t uid = 0;
+	uid_t uid = -1;
 
 	inode = get_inode_by_ipport(ip, rport);
 //		printf("(get_inode_by_rport(%d))=%lu\n", rport, inode);
+    if (inode == 0) {
+        return uid;
+    }
+    
 	pid = get_pid_by_inode(inode);
 //		printf("(get_pid_by inode)=%d\n", pid);
+    if (pid == 0) {
+        return uid;
+    }
+    
 	uid = get_uid_by_pid(pid);
 //		printf("(get_uid_by_pid)=%d\n", uid);
 
