@@ -27,7 +27,7 @@ int is_sshd_proc(const char* path) {
 	readb = fread(buf, 1, sizeof(buf), fp);
 	fclose(fp);
 
-	if (readb <= 0) {
+	if (readb < 0) {
 		SSHBAND_LOGW("Can't read %s, readb()=%d: %s\n", cmdline, readb, strerror(errno));
 		return 0;
 	}
@@ -180,7 +180,7 @@ uid_t get_uid_by_pid(pid_t pid) {
 	readb = fread(buf, 1000, 1, fp);	
 	fclose(fp);
 
-	if (readb <= 0) {
+	if (readb < 0) {
 		SSHBAND_LOGW("Can't read %s, fread()=%d: %s\n", status, readb, strerror(errno));
 		return 0;
 	}
