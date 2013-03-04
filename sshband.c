@@ -22,6 +22,8 @@
 extern uint64_t db_inserted_id;
 extern sql_queue_t* sql_queue_head;
 
+static char* config_config_path = NULL;	/// Path to configure file
+
 u_short ssh_port = 22;
 uid_t ssh_uid = 120;
 static ssh_session_t* sessions[65536] = {NULL};
@@ -510,7 +512,7 @@ char* get_config(const char* name) {
 	FILE* fp;
 	
 	config[0] = 0;
-	fp = fopen(SSHBAND_CONFIG_PATH, "r");
+	fp = fopen(config_config_path, "r");
 	if (fp == NULL) {
 		SSHBAND_LOGE("Could not open configure file `%s': %s\n", SSHBAND_CONFIG_PATH, strerror(errno));
 		return config;
@@ -555,7 +557,21 @@ char* get_config(const char* name) {
 	return config;
 }
 
-void load_config() {
+void load_config(const char* path) {
+	/**
+	 * 设置配置文件路径
+	 */
+	if (path == NULL) {
+		config_config_path = SSHBAND_CONFIG_PATH;
+	}
+	else {
+		config_config_path = (char*)path;
+	}
+	SSHBAND_LOG("Using `%s' as configure file\n", config_config_path);
+	
+	/**
+	 * 读取配置
+	 */
 	config_log_level = atoi(get_config("log_level"));
 
 	ssh_port = atoi(get_config("ssh_port"));
@@ -792,9 +808,14 @@ int delete_pid() {
 }
 
 int main(int argc, char** argv) {
+	char* cfgpath = NULL;
+	
 	openlog(basename(argv[0]), LOG_PID | LOG_CONS | LOG_PERROR, LOG_INFO | LOG_DAEMON);	/// 初始化 Syslog
 	
-	load_config();
+	if (argc >= 2) {
+		cfgpath = argv[1];
+	}
+	load_config(cfgpath);
 	
 	reg_signal();
 		

@@ -43,6 +43,7 @@
 #define SSHBAND_LOGI(LOG, ...)	if (config_log_level >= SSHBAND_LOG_INFO) { syslog(LOG_DAEMON | LOG_INFO, LOG, ##__VA_ARGS__); }
 #define SSHBAND_LOGW(LOG, ...)	if (config_log_level >= SSHBAND_LOG_WARN) { syslog(LOG_DAEMON | LOG_INFO, LOG, ##__VA_ARGS__); }
 #define SSHBAND_LOGE(LOG, ...)	if (config_log_level >= SSHBAND_LOG_ERROR) { syslog(LOG_DAEMON | LOG_INFO, LOG, ##__VA_ARGS__); }
+#define SSHBAND_LOG(LOG, ...)	syslog(LOG_DAEMON | LOG_INFO, LOG, ##__VA_ARGS__)
 
 extern int8_t config_log_level;
 
