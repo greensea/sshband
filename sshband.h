@@ -25,6 +25,11 @@
 #define SSHBAND_CONFIG_PATH	"/etc/sshband.conf"
 
 /**
+ * 默认 PID 文件路径
+ */
+#define SSHBAND_PID_PATH	"/var/run/sshband.pid"
+
+/**
  * SSHBAND 日志级别
  */
 #define SSHBAND_LOG_ERROR	2
@@ -79,5 +84,9 @@ typedef struct acctsql_t {
 void load_config();	
 void ssh_session_cleanup();
 void ssh_session_acct_update(ssh_session_t* sess);
+
+int write_pid();
+
+int delete_pid();
 
 #endif

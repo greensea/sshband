@@ -32,6 +32,8 @@ int8_t config_log_level = SSHBAND_LOG_WARN;
 char config_net_device[1024] = {0};
 int config_update_usage_period = UPDATE_USAGE_PERIOD_DEFAULT;
 
+char config_pid_path[1024] = {0};
+
 char config_mysql_host[1024] = {0};
 char config_mysql_user[1024] = {0};
 char config_mysql_pass[1024] = {0};
@@ -570,6 +572,12 @@ void load_config() {
 		config_update_usage_period = UPDATE_USAGE_PERIOD_DEFAULT;
 	}
 
+	strncpy(config_pid_path, get_config("pid"), sizeof(config_pid_path) - 1);
+	if (config_pid_path[0] == 0x00) {
+		SSHBAND_LOGW("pid not set in configure file, use `%s' as default\n", SSHBAND_PID_PATH);
+		strncpy(config_pid_path, SSHBAND_PID_PATH, sizeof(config_pid_path));
+	}
+
 	strncpy(config_mysql_pass, get_config("mysql_password"), sizeof(config_mysql_pass) - 1);
 	strncpy(config_mysql_user, get_config("mysql_username"), sizeof(config_mysql_user) - 1);
 	strncpy(config_mysql_db, get_config("mysql_database"), sizeof(config_mysql_db) - 1);
@@ -605,7 +613,7 @@ static void sshband_exit(int signo) {
 	
 	db_destroy();
 	
-	unlink("/var/run/sshband.pid");
+	delete_pid();
 	
 	SSHBAND_LOGI("sshband stopped\n");
 	
@@ -713,10 +721,81 @@ void ssh_session_cleanup()
 }
 
 
+/**
+ * 写入 PID
+ * 
+ * @return int	成功返回0; 否则返回其他值
+ */
+int write_pid() {
+	char proc_path[1024] = {0};
+	int pid = 0;
+	int n;
+	FILE* fp;
+	
+	fp = fopen(config_pid_path, "r");
+	
+	if (fp != NULL) {
+		n = fscanf(fp, "%d", &pid);
+		fclose(fp);
+		
+		snprintf(proc_path, sizeof(proc_path), "/proc/%d", pid);
+		
+		if (access(proc_path, F_OK) == 0) {
+			/// FIXME: 应该进一步检查当前存在的进程的二进制文件是不是 sshband 自身
+			SSHBAND_LOGE("Seems another sshband instance is running, exiting...\n");
+			return -1;
+		}
+	}
+	
+	fp = fopen(config_pid_path, "w");
+	if (fp == NULL) {
+		SSHBAND_LOGW("Can't open `%s' for writting\n", config_pid_path)
+		return -2;
+	}
+	
+	fprintf(fp, "%d", getpid());
+	fclose(fp);
+	
+	return 0;
+}
+
+/**
+ * 删除 PID 文件
+ * 
+ * @return int	成功返回0,否则返回其他值
+ */
+int delete_pid() {
+	FILE* fp;
+	int pid = 0;
+	int ret, n;
+	
+	fp = fopen(config_pid_path, "r");
+	
+	if (fp != NULL) {
+		n = fscanf(fp, "%d", &pid);
+		fclose(fp);
+	}
+	
+	if (pid == getpid()) {
+		ret = unlink(config_pid_path);
+		if (ret != 0) {
+			SSHBAND_LOGW("Can't delete pid file `%s': %s\n", config_pid_path, strerror(errno));
+			return -1;
+		}
+	}
+	else {
+		SSHBAND_LOGW("Seems pid file `%s' is not created by current process, it won't be delete\n", config_pid_path);
+		return -1;
+	}
+	
+	return 0;
+}
+
 int main(int argc, char** argv) {
-	openlog(basename(argv[0]), LOG_PID, LOG_INFO | LOG_DAEMON);	/// 初始化 Syslog
+	openlog(basename(argv[0]), LOG_PID | LOG_CONS | LOG_PERROR, LOG_INFO | LOG_DAEMON);	/// 初始化 Syslog
 	
 	load_config();
+	
 	reg_signal();
 		
 	/**
@@ -726,18 +805,11 @@ int main(int argc, char** argv) {
 		exit(0);
 	}		
 	else {
-		FILE* fp;
+		/// 根据 PID 检查当前进程是否唯一
+		if (write_pid() != 0) {
+			exit(0);
+		}
 		
-		fp = fopen("/var/run/sshband.pid", "w");
-		if (fp != NULL) {
-			fprintf(fp, "%d", getpid());
-			fclose(fp);
-		}
-		else {
-			SSHBAND_LOGE("Could not create pid file: /var/run/sshband.pid\n");
-			sshband_exit(1);
-		}
-
 		/// 检查 SQL 服务器是否正常
 		if (db_init() != 0) {
 			SSHBAND_LOGE("MySQL configure error, please check sshband configure file\n");
