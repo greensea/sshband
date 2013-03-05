@@ -1,0 +1,67 @@
+.\"Created with GNOME Manpages Editor
+.\"http://sourceforge.net/projects/gmanedit2
+.\"Replace <program> with the program name, x with the Section Number
+.\"http://sourceforge.net/projects/gmanedit2
+.TH sshband 8 "March 5, 2013" "" ""
+
+.SH NAME
+sshband \- SSH tunnel traffic counter
+
+.SH SYNOPSIS
+.B sshband
+.RI [ configure ]
+.br
+
+.SH DESCRIPTION
+.B sshband
+is use to counting total traffic via SSH tunnel per user. Information such as username, ingress, outgress, login/logout time could be sen to MySQL. Field name and table name in MySQL is configureable. See 
+.I /etc/sshband.conf
+for more detail.
+.PP
+.I configure
+is configure file path,
+.B sshband
+will use
+.I /etc/sshband.conf
+as default if
+.I configure
+is not specific.
+.PP
+.B sshband
+is able to work even if SSH is configured listen on multiple ports, see
+.B EXAMPLE
+for more detail.
+
+.SH EXAMPLE
+If SSH listen on multiports, you must start multi
+.B sshband
+instance. Assume that SSH listen on port 22 and 2222, you need two configure file:
+.PP
+.I     sshband.22.conf
+
+    ...
+    port 22
+    ...
+
+.I sshband.2222.conf
+
+    ...
+    port 2222
+    ...
+
+Then start sshband like this:
+
+    sshband sshband.22.conf
+    sshband sshband.2222.conf
+
+
+.SH BUGS
+
+Report all bugs to project homepage
+.I http://code.google.com/p/sshband/
+
+
+.SH AUTHOR
+greensea <gs@bbxy.net>
+
+
