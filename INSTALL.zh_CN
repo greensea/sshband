@@ -6,5 +6,9 @@
 
 然后开始编译安装
 
+    $ ./configure
     $ make
     # make install
+
+最后将 sshband.conf 复制到 /etc/sshband.conf 即可。
+

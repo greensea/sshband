@@ -9,15 +9,15 @@
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
+#include <libgen.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include "mysql.h"
+#include "sshband_mysql.h"
 #include "sshband.h"
-#include "pcap.h"
+#include "sshband_pcap.h"
 #include "userinfo.h"
 #include "string.h"
-#include "mysql.h"
 
 extern uint64_t db_inserted_id;
 extern sql_queue_t* sql_queue_head;

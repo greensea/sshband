@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#include <mysql.h>
+#include <mysql/mysql.h>
 #include <errno.h>
 #include <unistd.h>
 #include "sshband.h"
-#include "mysql.h"
+#include "sshband_mysql.h"
 
 
 extern char config_mysql_host[1024];

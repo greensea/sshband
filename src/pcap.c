@@ -1,10 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <pcap.h>
-#include <pcap.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 #include <ctype.h>
 #include <errno.h>
 #include <unistd.h>
@@ -13,7 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
-#include "pcap.h"
+#include "sshband_pcap.h"
 #include "sshband.h"
 #include "userinfo.h"
 
